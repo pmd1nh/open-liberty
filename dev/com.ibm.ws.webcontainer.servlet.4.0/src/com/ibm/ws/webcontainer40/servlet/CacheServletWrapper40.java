@@ -57,6 +57,12 @@ public class CacheServletWrapper40 extends CacheServletWrapper {
         WebAppDispatcherContext40 dispatchContext = (WebAppDispatcherContext40) ((SRTServletRequest40) req).getWebAppDispatcherContext();
         mapping = dispatchContext.getServletMapping();
 
+        System.out.println("PMDINH_246748_DEBUG, " + CLASS_NAME + " " + methodName + "req.getRequestURL() -> [" + req.getRequestURL()
+                           + "] , queryString -> [" + req.getQueryString() + "]");
+
+        System.out.println("PMDINH_246748_DEBUG, " + CLASS_NAME + methodName + " dispatchContext -> ["
+                           + dispatchContext + "] mapping -> [" + mapping + "]");
+
         if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled() && logger.isLoggable(Level.FINE)) {
             logger.exiting(CLASS_NAME, methodName);
         }
@@ -74,6 +80,9 @@ public class CacheServletWrapper40 extends CacheServletWrapper {
         // through the path of URIMatcher.
         //reqData.setMappingMatch(this.mapping.getMappingMatch());
         WebAppDispatcherContext40 dispatchContext = (WebAppDispatcherContext40) ((SRTServletRequest40) req).getWebAppDispatcherContext();
+        System.out.println("PMDINH_246748_DEBUG, " + CLASS_NAME + " " + methodName + ", dispatchContext -> ["
+                           + dispatchContext + "] mapping -> [" + mapping + "]");
+
         dispatchContext.setMappingMatch(mapping.getMappingMatch());
 
         if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled() && logger.isLoggable(Level.FINE)) {

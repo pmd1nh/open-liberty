@@ -408,23 +408,30 @@ public class InvokerExtensionProcessor extends WebExtensionProcessor
         {
             if (s==null&&handleFailure)
                 response.sendError(HttpServletResponse.SC_NOT_FOUND, MessageFormat.format(nls.getString("Servlet.Not.Found.{0}","Servlet Not Found: {0}"), new Object[]{errorString}));
-            //PK16467
-            if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled()&&logger.isLoggable (Level.FINE)){
-                logger.logp(Level.FINE, CLASS_NAME,"handleRequest", "About to add to cache, servletWrapper-->["+s);
-            }
-            //PK16467
-
-            if (dispatchContext.getDispatcherType()==DispatcherType.REQUEST) {
-                /*
-                 * TODO: Figure out a way to remove this limitation?
-                 * Don't add it to the cache if it is a forward or an include...
-                 */
-
-                if (s != null && invokePath != null && !failedAddMappingTarget)
-                {
-                    WebContainer.addToCache(request, s, (WebApp) extensionContext);
+            
+            //PMDINH 246748 build break.  Should not call addToCache here since the actual servlet.service() is not invoked yet
+            //This merely create a servletWrapper for /servlet/* class.  The main servlet.service() will be called
+            //when this returns and executed inside the WebApp filterManager.invokeFilters().  
+            
+            if(false){ //PMDINH_246748
+                //PK16467
+                if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled()&&logger.isLoggable (Level.FINE)){
+                    logger.logp(Level.FINE, CLASS_NAME,"handleRequest", "About to add to cache, servletWrapper-->["+s);
                 }
-            }
+                //PK16467
+
+                if (dispatchContext.getDispatcherType()==DispatcherType.REQUEST) {
+                    /*
+                     * TODO: Figure out a way to remove this limitation?
+                     * Don't add it to the cache if it is a forward or an include...
+                     */
+
+                    if (s != null && invokePath != null && !failedAddMappingTarget)
+                    {
+                        WebContainer.addToCache(request, s, (WebApp) extensionContext);
+                    }
+                }
+            }   //PMDINH_246748
         }
         return s;
     }
