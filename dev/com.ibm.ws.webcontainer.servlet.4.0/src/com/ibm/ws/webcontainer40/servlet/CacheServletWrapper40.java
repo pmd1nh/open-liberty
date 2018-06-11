@@ -54,6 +54,8 @@ public class CacheServletWrapper40 extends CacheServletWrapper {
             logger.entering(CLASS_NAME, methodName);
         }
 
+        System.out.println("PMDINH, CacheServletWrapper40, BB debug");
+
         WebAppDispatcherContext40 dispatchContext = (WebAppDispatcherContext40) ((SRTServletRequest40) req).getWebAppDispatcherContext();
         mapping = dispatchContext.getServletMapping();
 
@@ -79,6 +81,7 @@ public class CacheServletWrapper40 extends CacheServletWrapper {
         if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled() && logger.isLoggable(Level.FINE)) {
             logger.logp(Level.FINE, CLASS_NAME, methodName, "MappingMatch: " + mapping.getMappingMatch());
         }
+        System.out.println("PMDINH, handleRequest() BB debug");
 
         super.handleRequest(req, res);
     }

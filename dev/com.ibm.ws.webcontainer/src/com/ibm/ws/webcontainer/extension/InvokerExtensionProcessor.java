@@ -408,23 +408,26 @@ public class InvokerExtensionProcessor extends WebExtensionProcessor
         {
             if (s==null&&handleFailure)
                 response.sendError(HttpServletResponse.SC_NOT_FOUND, MessageFormat.format(nls.getString("Servlet.Not.Found.{0}","Servlet Not Found: {0}"), new Object[]{errorString}));
-            //PK16467
-            if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled()&&logger.isLoggable (Level.FINE)){
-                logger.logp(Level.FINE, CLASS_NAME,"handleRequest", "About to add to cache, servletWrapper-->["+s);
-            }
-            //PK16467
-
-            if (dispatchContext.getDispatcherType()==DispatcherType.REQUEST) {
-                /*
-                 * TODO: Figure out a way to remove this limitation?
-                 * Don't add it to the cache if it is a forward or an include...
-                 */
-
-                if (s != null && invokePath != null && !failedAddMappingTarget)
-                {
-                    WebContainer.addToCache(request, s, (WebApp) extensionContext);
+            
+            if (false){//PMDINH
+                //PK16467
+                if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled()&&logger.isLoggable (Level.FINE)){
+                    logger.logp(Level.FINE, CLASS_NAME,"handleRequest", "About to add to cache, servletWrapper-->["+s);
                 }
-            }
+                //PK16467
+
+                if (dispatchContext.getDispatcherType()==DispatcherType.REQUEST) {
+                    /*
+                     * TODO: Figure out a way to remove this limitation?
+                     * Don't add it to the cache if it is a forward or an include...
+                     */
+
+                    if (s != null && invokePath != null && !failedAddMappingTarget)
+                    {
+                        WebContainer.addToCache(request, s, (WebApp) extensionContext);
+                    }
+                }
+            } //PMDINH
         }
         return s;
     }
