@@ -634,6 +634,7 @@ public class WebApp extends com.ibm.ws.webcontainer.webapp.WebApp implements Com
                 DocumentRootUtils dru = getDocumentRootUtils(path);
                 
                 if (dru != null) {
+                    File matchedFile;   //PMDINH
                     if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled() && logger.isLoggable(Level.FINE))
                         logger.logp(Level.FINE, CLASS_NAME, "getReadPath", "obtained dru");
                     
@@ -666,6 +667,11 @@ public class WebApp extends com.ibm.ws.webcontainer.webapp.WebApp implements Com
                                 }
                             }
                         }
+                    }
+                    else if ((matchedFile = dru.getMatchedFile()) != null) { //PMDINH
+                        if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled() && logger.isLoggable(Level.FINE))
+                            logger.logp(Level.FINE, CLASS_NAME, "getRealPath", "found file [" + matchedFile.getAbsolutePath() +"]"); 
+                        return matchedFile.getAbsolutePath();
                     }
                 }
             }

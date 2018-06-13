@@ -260,38 +260,38 @@ public class DocumentRootUtils {
         // If a match is found check if file is a directory.
         // If it is not a directory and a trailing slash was removed then invalidate the match;
         if (foundMatch) {
-        	if (matchedZipFile!=null) {
+            if (matchedZipFile!=null) {
                 if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled()&&logger.isLoggable (Level.FINE)) {
                     logger.logp(Level.FINE,CLASS_NAME,"handleDocumentRoots", "found in zip : " + matchedZipFile.getZipFile()+ ", entry : " + matchedZipFile.getZipEntry().getName());
                 }
-        		ZipEntry matchedZipEntry = matchedZipFile.getZipFile().getEntry(matchedZipFile.getZipEntry().getName()+"/");
+                ZipEntry matchedZipEntry = matchedZipFile.getZipFile().getEntry(matchedZipFile.getZipEntry().getName()+"/");
                 if (matchedZipEntry!=null) {
                     matchIsADirectory = true;
                 } 
-        	} else if (matchedFile!=null) {
-        		matchIsADirectory = matchedFile.isDirectory();
-        	} else if (matchedEntry != null) {
-        	        Entry internal = matchedEntry.getEntry();
-        	        Container possibleContainer = null;
-        	        //Want to see if we can adapt the entry into a Container in case its a directory
-        	        try{
-        	            possibleContainer = internal.adapt(Container.class);
-        	        } catch (UnableToAdaptException uae){
-        	            //no-op, means something went wrong adapting this to a container
-        	        }
-        	        if(internal.getSize() == 0 && possibleContainer != null){
-        	            matchIsADirectory = true;
-        	        }
-        	}
+            } else if (matchedFile!=null) {
+                matchIsADirectory = matchedFile.isDirectory();
+            } else if (matchedEntry != null) {
+                Entry internal = matchedEntry.getEntry();
+                Container possibleContainer = null;
+                //Want to see if we can adapt the entry into a Container in case its a directory
+                try{
+                    possibleContainer = internal.adapt(Container.class);
+                } catch (UnableToAdaptException uae){
+                    //no-op, means something went wrong adapting this to a container
+                }
+                if(internal.getSize() == 0 && possibleContainer != null){
+                    matchIsADirectory = true;
+                }
+            }
             if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled()&&logger.isLoggable (Level.FINE)) {
                 logger.logp(Level.FINE,CLASS_NAME,"handleDocumentRoots", "match " + (matchIsADirectory ? " is " : "is not") + " a directory");
             }
-    		if (!matchIsADirectory && trailingSlashRemoved) {
+            if (!matchIsADirectory && trailingSlashRemoved) {
                 if (com.ibm.ejs.ras.TraceComponent.isAnyTracingEnabled()&&logger.isLoggable (Level.FINE)) {
                     logger.logp(Level.FINE,CLASS_NAME,"handleDocumentRoots", "match found was for a directory but filename had a trailing slash");
                 }    			
-    			foundMatch = false;
-    		}	
+                foundMatch = false;
+            }	
         }
         
         
@@ -562,10 +562,13 @@ public class DocumentRootUtils {
     	    ExtDocRootFile edrFile = edr.getExtDocRootFile();
     	    if (edrFile  instanceof  ZipFileResource) {
     	        matchedZipFile = (ZipFileResource)edrFile;
+                logger.logp(Level.FINE, CLASS_NAME,"checkEDR", "matched in Zip file");
     	    } else if (edrFile instanceof FileResource){
     	    	matchedFile = ((FileResource)edrFile).getMatch();
+                logger.logp(Level.FINE, CLASS_NAME,"checkEDR", "matched a file");
     	    }	else if (edrFile instanceof EntryResource) {
     	        matchedEntry = (EntryResource) edrFile;
+                logger.logp(Level.FINE, CLASS_NAME,"checkEDR", "matched in an Entry");
     	    }
     	    
     	    matched = (matchedZipFile!=null || matchedFile != null || matchedEntry != null);
