@@ -426,6 +426,7 @@ public class WCCustomProperties {
             Tr.entry(tc, "setCustomProperties");
         }
 
+        customProps = WebContainer.getWebContainerProperties();
         String ky;
         String propertyKey;
 
