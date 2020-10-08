@@ -17,6 +17,7 @@ import org.junit.runners.Suite;
 import org.junit.runners.Suite.SuiteClasses;
 
 import com.ibm.ws.fat.util.FatLogHandler;
+import com.ibm.ws.fat.wc.tests.WC5GetContextPath;
 import com.ibm.ws.fat.wc.tests.WC5JakartaServletTest;
 import com.ibm.ws.fat.wc.tests.WCAddJspFileTest;
 import com.ibm.ws.fat.wc.tests.WCApplicationMBeanStatusTest;
@@ -79,8 +80,8 @@ import componenttest.rules.repeater.RepeatTests;
                 WCSameSiteCookieAttributeTests.class,
                 WCServletPathForDefaultMappingDefault.class,
                 WCServletPathForDefaultMappingFalse.class,
-                WCGetMappingSlashStarTest.class
-
+                WCGetMappingSlashStarTest.class,
+                WC5GetContextPath.class
 })
 
 public class FATSuite {
