@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022,2025 IBM Corporation and others.
+ * Copyright (c) 2022,2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -17,6 +17,7 @@ import static io.openliberty.data.internal.persistence.cdi.DataExtension.exc;
 import java.util.AbstractList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.RandomAccess;
 import java.util.stream.Stream;
@@ -40,10 +41,22 @@ public class PageImpl<T> implements Page<T> {
     private static final TraceComponent tc = Tr.register(PageImpl.class);
 
     /**
+     * Map of JPQL parameter names/indices and values that are added due to
+     * repository special parameters. Null indicates none are added.
+     */
+    private final Map<Object, Object> addedJPQLParams;
+
+    /**
      * Values that are supplied when invoking the repository method that
      * requests the page.
      */
     private final Object[] args;
+
+    /**
+     * Map of method parameter index to non-Literal Constraints that are supplied
+     * at execution time.
+     */
+    private final Map<Integer, Object> deferredConstraints;
 
     /**
      * The request for this page.
@@ -69,13 +82,24 @@ public class PageImpl<T> implements Page<T> {
     /**
      * Construct a new Page.
      *
-     * @param queryInfo   query information.
-     * @param pageRequest the request for this page.
-     * @param args        values that are supplied to the repository method.
+     * @param queryInfo           query information.
+     * @param em                  the entity manager.
+     * @param pageRequest         the request for this page.
+     * @param args                values that are supplied to the repository method.
+     * @param deferredConstraints map of method parameter index to non-Literal
+     *                                Constraints that are supplied at execution time.
+     * @param addedJPQLParams     map of JPQL parameter names/indices and values that are
+     *                                added due to repository special parameters.
+     *                                Null indicates none are added.
+     * @throws Exception if an error occurs.
      */
-    @FFDCIgnore(Exception.class)
     @Trivial
-    PageImpl(QueryInfo queryInfo, PageRequest pageRequest, Object[] args) {
+    PageImpl(QueryInfo queryInfo,
+             EntityManager em,
+             PageRequest pageRequest,
+             Object[] args,
+             Map<Integer, Object> deferredConstraints,
+             Map<Object, Object> addedJPQLParams) {
         final boolean trace = TraceComponent.isAnyTracingEnabled();
         if (trace && tc.isEntryEnabled())
             Tr.entry(tc, "<init>", queryInfo, pageRequest, queryInfo.loggable(args));
@@ -92,26 +116,23 @@ public class PageImpl<T> implements Page<T> {
                       queryInfo.method.getGenericReturnType().getTypeName(),
                       CursoredPage.class.getName());
 
+        this.addedJPQLParams = addedJPQLParams;
+        this.deferredConstraints = deferredConstraints;
         this.queryInfo = queryInfo;
         this.pageRequest = pageRequest;
         this.args = args;
 
-        EntityManager em = queryInfo.entityInfo.builder.createEntityManager();
-        try {
-            @SuppressWarnings("unchecked")
-            TypedQuery<T> query = (TypedQuery<T>) em.createQuery(queryInfo.jpql, queryInfo.entityInfo.entityClass);
-            queryInfo.setParameters(query, args);
+        @SuppressWarnings("unchecked")
+        TypedQuery<T> query = (TypedQuery<T>) em.createQuery(queryInfo.jpql,
+                                                             Object.class);
+        queryInfo.setParameters(query, args, deferredConstraints, addedJPQLParams);
 
-            int maxPageSize = pageRequest.size();
-            query.setFirstResult(queryInfo.computeOffset(pageRequest));
-            query.setMaxResults(maxPageSize + (maxPageSize == Integer.MAX_VALUE ? 0 : 1));
+        int maxPageSize = pageRequest.size();
+        query.setFirstResult(queryInfo.computeOffset(pageRequest));
+        query.setMaxResults(maxPageSize + (maxPageSize == Integer.MAX_VALUE ? 0 : 1));
 
-            results = query.getResultList();
-        } catch (Exception x) {
-            throw RepositoryImpl.failure(x, queryInfo.entityInfo.builder);
-        } finally {
-            em.close();
-        }
+        List<T> resultList = query.getResultList();
+        results = resultList;
 
         if (trace && tc.isEntryEnabled())
             Tr.exit(this, tc, "<init>");
@@ -136,12 +157,20 @@ public class PageImpl<T> implements Page<T> {
             pageRequest.size() < Integer.MAX_VALUE)
             return results.size();
 
+        if (queryInfo.jpqlCount.length() < Util.MIN_COUNT_QUERY_LENGTH)
+            throw exc(UnsupportedOperationException.class,
+                      "CWWKD1119.keyword.prevents.count",
+                      queryInfo.method.getName(),
+                      queryInfo.repositoryInterface.getName(),
+                      queryInfo.jpqlCount,
+                      queryInfo.jpql);
+
         EntityManager em = queryInfo.entityInfo.builder.createEntityManager();
         try {
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled())
                 Tr.debug(this, tc, "query for count: " + queryInfo.jpqlCount);
             TypedQuery<Long> query = em.createQuery(queryInfo.jpqlCount, Long.class);
-            queryInfo.setParameters(query, args);
+            queryInfo.setParameters(query, args, deferredConstraints, addedJPQLParams);
 
             return query.getSingleResult();
         } catch (Exception x) {
@@ -181,7 +210,8 @@ public class PageImpl<T> implements Page<T> {
 
     @Override
     public boolean hasTotals() {
-        return pageRequest.requestTotal();
+        return queryInfo.jpqlCount.length() >= Util.MIN_COUNT_QUERY_LENGTH &&
+               pageRequest.requestTotal();
     }
 
     @Override

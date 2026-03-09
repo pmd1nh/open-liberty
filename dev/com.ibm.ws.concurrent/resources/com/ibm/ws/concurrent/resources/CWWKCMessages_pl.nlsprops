@@ -1,5 +1,5 @@
 ###############################################################################
-# Copyright (c) 2012, 2020 IBM Corporation and others.
+# Copyright (c) 2012, 2026 IBM Corporation and others.
 # All rights reserved. This program and the accompanying materials
 # are made available under the terms of the Eclipse Public License 2.0
 # which accompanies this distribution, and is available at
@@ -62,6 +62,10 @@ CWWKC1103.skip.run.failed=CWWKC1103E: Wykonanie zadania {0}, kt\u00f3re zosta\u0
 CWWKC1103.skip.run.failed.explanation=Operacja skipRun obiektu Trigger nie powiod\u0142a si\u0119, powoduj\u0105c pomini\u0119cie bie\u017c\u0105cej pr\u00f3by wykonania zadania.
 CWWKC1103.skip.run.failed.useraction=Usu\u0144 przyczyn\u0119 niepowodzenia i zdecyduj, czy ponownie uruchomi\u0107 zadanie.
 
+CWWKC1108.override.virtual=CWWKC1108I: Fabryka w\u0105tk\u00f3w zarz\u0105dzana przez {0} utworzy w\u0105tki platformy, poniewa\u017c tworzenie w\u0105tk\u00f3w wirtualnych przez serwer Liberty jest wy\u0142\u0105czone.
+CWWKC1108.override.virtual.explanation=SPI ThreadTypeOverride wy\u0142\u0105czy\u0142o tworzenie wirtualnych w\u0105tk\u00f3w przez serwer Liberty.
+CWWKC1108.override.virtual.useraction=Nie jest wymagana \u017cadna czynno\u015b\u0107.
+
 CWWKC1110.task.canceled=CWWKC1110I: Zadanie {0} , kt\u00f3re zosta\u0142o przes\u0142ane do us\u0142ugi wykonawczej {1} , zosta\u0142o anulowane.
 CWWKC1110.task.canceled.explanation=Zadanie zosta\u0142o anulowane.
 CWWKC1110.task.canceled.useraction=Nie jest wymagana \u017cadna czynno\u015b\u0107.
@@ -78,11 +82,11 @@ CWWKC1120.future.get.rejected=CWWKC1120E: Adnotacja Future udost\u0119pniona dla
 CWWKC1120.future.get.rejected.explanation=Metody ManagedTaskListener taskSubmitted i taskStarting s\u0105 uruchamiane w w\u0105tku, kt\u00f3ry wprowadza lub uruchamia zadanie. Dlatego podczas oczekiwania na zako\u0144czenie zadania nie mo\u017cna u\u017cywa\u0107 adnotacji Future udost\u0119pnianej dla tych metod.
 CWWKC1120.future.get.rejected.useraction=Zaktualizuj aplikacj\u0119, aby unikn\u0105\u0107 wywo\u0142ywania metody get w adnotacji Future udost\u0119pnianej dla metod taskSubmitted i taskStarting.
 
-CWWKC1121.virtual.invalid=CWWKC1121E: Adnotacja {0} lub element deskryptora wdro\u017cenia {1} o nazwie {0} okre\u015bla virtual=true, ale w\u0105tki wirtualne nie s\u0105 dost\u0119pne w wersjach starszych ni\u017c Java 21. U\u017cywany poziom Java to: {1} .
+CWWKC1121.virtual.invalid=CWWKC1121E: Adnotacja \u201e {0} \u201d lub element deskryptora wdro\u017cenia \u201e {1} \u201d o nazwie \u201e {2} \u201d okre\u015bla warto\u015b\u0107 \u201evirtual=true\u201d, ale wirtualne w\u0105tki nie s\u0105 dost\u0119pne przed wersj\u0105 Java 21. Wykorzystywany poziom Java to: {3}.
 CWWKC1121.virtual.invalid.explanation=W u\u017cywanej wersji Java w\u0105tki wirtualne nie s\u0105 dost\u0119pne.
 CWWKC1121.virtual.invalid.useraction=Zaktualizuj do nowszej wersji Java, kt\u00f3ra obs\u0142uguje w\u0105tki wirtualne.
 
-CWWKC1122.mod.unavail=CWWKC1122E: Aplikacja {0} lub jej modu\u0142 {1} s\u0105 niedost\u0119pne.
+CWWKC1122.mod.unavail=CWWKC1122E: Aplikacja {0} lub jej modu\u0142 {1} nie jest dost\u0119pny. ManagedThreadFactory nie mo\u017cna uzyska\u0107 fasoli zdefiniowanych w aplikacji lub module.
 CWWKC1122.mod.unavail.explanation=Aby uzyska\u0107 instancj\u0119 ManagedThreadFactory , musi by\u0107 dost\u0119pna aplikacja i modu\u0142 definiuj\u0105ce konfiguracj\u0119 ManagedThreadFactory .
 CWWKC1122.mod.unavail.useraction=Sprawd\u017a, czy aplikacja jest uruchomiona i czy zawiera modu\u0142 definiuj\u0105cy konfiguracj\u0119 ManagedThreadFactory .
 

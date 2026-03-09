@@ -1,5 +1,5 @@
-/*******************************************************************************
- * Copyright (c) 2012, 2022 IBM Corporation and others.
+/*
+ * Copyright 2012,2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -9,7 +9,7 @@
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
- *******************************************************************************/
+ */
 package com.ibm.ws.sib.processor.impl;
 
 import java.util.ArrayList;
@@ -162,14 +162,14 @@ public final class DestinationManager extends SIMPItemStream
      * subscriptions. This MUST be available to every TopicSpace since a
      * subsriptionId is unique across the system.
      */
-    private HashMap durableSubscriptions;
+    private HashMap<String, ConsumerDispatcher> durableSubscriptions;
 
     /**
      * The destination manager maintains an ME-wide hashmap for nondurable
      * shared subscriptions. This MUST be available to every TopicSpace since a
      * subsriptionId is unique across the system for all non-durable shared subscribers.
      */
-    private ConcurrentHashMap<String, Object> nondurableSharedSubscriptions;
+    private ConcurrentHashMap<String, ConsumerDispatcher> nondurableSharedSubscriptions;
 
     private boolean reconciling = false;
 
@@ -347,7 +347,7 @@ public final class DestinationManager extends SIMPItemStream
 
         //initializing nondurableSharedSubscriptions here as it is common flow for cold and warm start
         //however nondurableSharedSubscriptions not be restored from Message Store.
-        nondurableSharedSubscriptions = new ConcurrentHashMap<String, Object>();
+        nondurableSharedSubscriptions = new ConcurrentHashMap<String, ConsumerDispatcher>();
 
         if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled())
             SibTr.exit(tc, "initializeNonPersistent");
@@ -358,7 +358,7 @@ public final class DestinationManager extends SIMPItemStream
      *
      * @return nondurableSharedSubscriptions
      */
-    public ConcurrentHashMap<String, Object> getNondurableSharedSubscriptions() {
+    public ConcurrentHashMap<String, ConsumerDispatcher> getNondurableSharedSubscriptions() {
         //Entry and Exit traces are not enabled as this would be called many a times
         //and it is trivial.
         return nondurableSharedSubscriptions;
@@ -1880,7 +1880,7 @@ public final class DestinationManager extends SIMPItemStream
      * @return durableSubHashMap
      */
 
-    public HashMap getDurableSubscriptionsTable()
+    public HashMap<String, ConsumerDispatcher> getDurableSubscriptionsTable()
     {
         return durableSubscriptions;
     }
@@ -5014,7 +5014,7 @@ public final class DestinationManager extends SIMPItemStream
 
         if (asyncUpdateThread == null)
         {
-            asyncUpdateThread = new AsyncUpdateThread(messageProcessor, messageProcessor.getTXManager(),
+            asyncUpdateThread = AsyncUpdateThread.create(messageProcessor, messageProcessor.getTXManager(),
                             messageProcessor.getCustomProperties().get_anycast_batch_size(),
                             messageProcessor.getCustomProperties().get_anycast_batch_timeout());
         }
@@ -5031,7 +5031,7 @@ public final class DestinationManager extends SIMPItemStream
 
         if (persistLockThread == null)
         {
-            persistLockThread = new AsyncUpdateThread(messageProcessor, messageProcessor.getTXManager(),
+            persistLockThread = AsyncUpdateThread.create(messageProcessor, messageProcessor.getTXManager(),
                             messageProcessor.getCustomProperties().get_anycast_lock_batch_size(),
                             messageProcessor.getCustomProperties().get_anycast_lock_batch_timeout());
         }

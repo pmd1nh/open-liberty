@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015, 2025 IBM Corporation and others.
+ * Copyright (c) 2015, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -34,6 +34,7 @@ import org.junit.rules.TestRule;
 import org.osgi.framework.ServiceReference;
 import org.osgi.service.component.ComponentContext;
 
+import com.ibm.ws.kernel.service.util.JavaInfo;
 import com.ibm.ws.security.authorization.jacc.JaccService;
 import com.ibm.ws.security.authorization.jacc.PolicyConfigurationManager;
 import com.ibm.ws.security.authorization.jacc.common.PolicyConfigurationManagerImpl;
@@ -112,7 +113,9 @@ public class WebJaccServiceImplTest {
         } else {
             System.clearProperty(JACC_FACTORY_EE9);
         }
-        Policy.setPolicy(policy);
+        if (JavaInfo.majorVersion() <= 21) {
+            Policy.setPolicy(policy);
+        }
     }
 
     /**
@@ -198,7 +201,6 @@ public class WebJaccServiceImplTest {
                 allowing(jaccProviderService).getPolicy();
                 will(returnValue(policy));
                 allowing(policyProxy).setPolicy();
-                allowing(policyProxy).refresh();
                 allowing(jaccProviderService).getPolicyConfigFactory();
                 will(returnValue(pcf));
                 allowing(jaccProviderServiceProxy).getPolicyName();
@@ -281,7 +283,6 @@ public class WebJaccServiceImplTest {
                 allowing(jaccProviderService).getPolicy();
                 will(returnValue(policy));
                 allowing(policyProxy).setPolicy();
-                allowing(policyProxy).refresh();
                 allowing(jaccProviderService).getPolicyConfigFactory();
                 will(returnValue(pcf));
                 allowing(jaccProviderServiceProxy).getPolicyName();
@@ -363,7 +364,6 @@ public class WebJaccServiceImplTest {
                 allowing(jaccProviderService).getPolicy();
                 will(returnValue(policy));
                 allowing(policyProxy).setPolicy();
-                allowing(policyProxy).refresh();
                 allowing(jaccProviderService).getPolicyConfigFactory();
                 will(returnValue(pcf));
                 allowing(jaccProviderServiceProxy).getPolicyName();

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022, 2025 IBM Corporation and others.
+ * Copyright (c) 2022, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -41,8 +41,11 @@ public class TestContainerSuite {
 
     private static final Class<?> c = TestContainerSuite.class;
 
-    private static final Path configSource = Paths.get(System.getProperty("user.home"), ".testcontainers.properties");
-    private static final Path configBackup = Paths.get(System.getProperty("java.io.tmpdir"), ".testcontainers.backup.properties");
+    private static final Path tcConfigSource = Paths.get(System.getProperty("user.home"), ".testcontainers.properties");
+    private static final Path tcConfigBackup = Paths.get(System.getProperty("java.io.tmpdir"), ".testcontainers.backup.properties");
+
+    private static final Path djConfigSource = Paths.get(System.getProperty("user.home"), ".docker-java.properties");
+    private static final Path djConfigBackup = Paths.get(System.getProperty("java.io.tmpdir"), ".docker-java.backup.properties");
 
     /**
      * THIS METHOD CALL IS REQUIRED TO USE TESTCONTAINERS PLEASE READ:
@@ -72,7 +75,8 @@ public class TestContainerSuite {
         Log.info(TestContainerSuite.class, "<init>", "Setting up testcontainers");
         configureLogging();
         verifyDockerConfig();
-        generateConfig();
+        generateTcConfig();
+        generateDjConfig();
     }
 
     @ClassRule
@@ -112,9 +116,17 @@ public class TestContainerSuite {
         }
 
         // Levels
-        System.setProperty("org.slf4j.simpleLogger.log.org.testcontainers", "debug");
+        // Container logs: debug
         System.setProperty("org.slf4j.simpleLogger.log.tc", "debug");
+        // Jakarta Transformer: disabled
+        System.setProperty("org.slf4j.simpleLogger.log.Transformer", "off");
+        // Testcontainers configuration/lifecycle: debug
+        System.setProperty("org.slf4j.simpleLogger.log.org.testcontainers", "debug");
+        // Docker transport layer: warn
         System.setProperty("org.slf4j.simpleLogger.log.com.github.dockerjava", "warn");
+        // Docker HTTP client: debug --verify requests are using the correct API version
+        System.setProperty("org.slf4j.simpleLogger.log.com.github.dockerjava.zerodep.shaded.org.apache.hc.client5.http.impl.classic.MainClientExec", "debug");
+        // Docker sockets: disabled -- everything is output to WARN
         System.setProperty("org.slf4j.simpleLogger.log.com.github.dockerjava.zerodep.shaded.org.apache.hc.client5.http.wire", "off");
     }
 
@@ -176,24 +188,24 @@ public class TestContainerSuite {
      * the properties necessary to connect and use a remote docker host if one is required
      * by the {@link #useRemoteDocker()} method.
      */
-    private static void generateConfig() {
-        final String m = "generateConfig";
+    private static void generateTcConfig() {
+        final String m = "generateTcConfig";
 
         Properties tcProps = new Properties();
 
         //Create new config file or load existing config properties
-        if (configSource.toFile().exists()) {
-            Log.info(c, m, "Testcontainers config already exists at: " + configSource.toAbsolutePath());
+        if (tcConfigSource.toFile().exists()) {
+            Log.info(c, m, "Testcontainers config already exists at: " + tcConfigSource.toAbsolutePath());
 
-            if (!swapConfigFiles(configSource, configBackup)) {
+            if (!swapConfigFiles(tcConfigSource, tcConfigBackup)) {
                 throw new RuntimeException("Could not backup existing Testcontainers config.");
             }
         } else {
-            Log.info(c, m, "Testcontainers config being created at: " + configSource.toAbsolutePath());
+            Log.info(c, m, "Testcontainers config being created at: " + tcConfigSource.toAbsolutePath());
         }
 
         //If using remote docker then setup strategy
-        if (useRemoteDocker()) {
+        if (TestContainerHelper.useRemoteDocker()) {
             try {
                 ExternalTestService.getService("docker-engine", ExternalDockerClientFilter.instance());
             } catch (Exception e) {
@@ -219,13 +231,14 @@ public class TestContainerSuite {
         //Always use LibertyImageNameSubstitutor
         tcProps.setProperty("image.substitutor", LibertyImageNameSubstitutor.class.getCanonicalName().toString());
 
-        //Always use TinyImage from AWS
+        //Always use internal testcontainer images from alternative sources (where possible)
         tcProps.setProperty("tinyimage.container.image", "public.ecr.aws/docker/library/alpine:3.17");
-
-        //TODO Switch Ryuk to version from ghcr.io
+        tcProps.setProperty("ryuk.container.image", "ghcr.io/testcontainers/ryuk:0.12.0");
+        tcProps.setProperty("vncrecorder.container.image", "ghcr.io/testcontainers/vnc-recorder:1.4.0");
+        tcProps.setProperty("sshd.container.image", "ghcr.io/testcontainers/sshd:1.3.0");
 
         try {
-            tcProps.store(new FileOutputStream(configSource.toFile()), "Modified by FAT framework");
+            tcProps.store(new FileOutputStream(tcConfigSource.toFile()), "Modified by FAT framework");
             Log.info(c, m, "Testcontainers config properties: " + tcProps.toString());
         } catch (IOException e) {
             Log.error(c, m, e);
@@ -234,11 +247,66 @@ public class TestContainerSuite {
     }
 
     /**
+     * Moves existing ~/.docker-java.properties file (if present) to a backup location.
+     * Then generates a new ~/.docker-java.properties file in it's place.
+     *
+     * This method must run AFTER {@link #generateTcConfig()}
+     *
+     * TODO the bug that this method avoids was fixed in version 1.21.4 and could be
+     * removed if we upgraded to that version. But since Testcontainers no longer officially
+     * supports JUnit 4 we cannot expect they will continue to update the 1.X.X stream to support newer
+     * versions of the docker API and we will likely need to continue to update the minimum
+     * API versions until such time as we update our infrastructure to Junit 5.
+     */
+    private static void generateDjConfig() {
+        final String m = "generateDjConfig";
+
+        Properties djProps = new Properties();
+
+        // Do not touch a users docker-java properties unless we intended to connect
+        // to our own remote docker hosts.
+        if (!TestContainerHelper.useRemoteDocker()) {
+            Log.info(c, m, "Skipping Docker-java config updates when testing against a local docker host.");
+            return;
+        }
+
+        //Create new config file or load existing config properties
+        if (djConfigSource.toFile().exists()) {
+            Log.info(c, m, "Docker-java config already exists at: " + djConfigSource.toAbsolutePath());
+
+            if (!swapConfigFiles(djConfigSource, djConfigBackup)) {
+                throw new RuntimeException("Could not backup existing Docker-java config.");
+            }
+        } else {
+            Log.info(c, m, "Docker-java config being created at: " + djConfigSource.toAbsolutePath());
+        }
+
+        if (ExternalDockerClientFilter.instance().isValid()) {
+            djProps.setProperty("api.version", ExternalDockerClientFilter.instance().getMinApiVersion().getVersion());
+        } else {
+            Log.warning(c, "Unable to find valid External Docker Client");
+        }
+
+        try {
+            djProps.store(new FileOutputStream(djConfigSource.toFile()), "Modified by FAT framework");
+            Log.info(c, m, "Docker-java config properties: " + djProps.toString());
+        } catch (IOException e) {
+            Log.error(c, m, e);
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    /**
      * Moves the .testcontainers.properties file from the backup location (if present)
      * into it's original location at ~/.testcontainers.properties.
      */
     private static void restoreConfig() {
-        if (!swapConfigFiles(configBackup, configSource)) {
+        if (!swapConfigFiles(tcConfigBackup, tcConfigSource)) {
+            throw new RuntimeException("Could not restore original Testcontainers config.");
+        }
+
+        if (!swapConfigFiles(djConfigBackup, djConfigSource)) {
             throw new RuntimeException("Could not restore original Testcontainers config.");
         }
     }
@@ -291,74 +359,5 @@ public class TestContainerSuite {
         }
 
         return true;
-    }
-
-    /**
-     * Determines if we are going to attempt to run against a remote
-     * docker host, or a local docker host.
-     *
-     * Priority:
-     * 1. System Property: fat.test.use.remote.docker
-     * 2. System Property: fat.test.docker.host -> REMOTE
-     * 3. System: GITHUB_ACTIONS -> LOCAL
-     * 4. System: WINDOWS -> REMOTE
-     * 5. System: ARM -> REMOTE
-     *
-     * default (!!! fat.test.localrun)
-     *
-     * @return true, we are running against a remote docker host, false otherwise.
-     */
-    private static boolean useRemoteDocker() {
-        boolean result;
-        String reason;
-
-        do {
-            //State 1: fat.test.use.remote.docker should always be honored first
-            if (System.getProperty("fat.test.use.remote.docker") != null) {
-                result = Boolean.getBoolean("fat.test.use.remote.docker");
-                reason = "fat.test.use.remote.docker set to " + result;
-                break;
-            }
-
-            //State 2: User provided a remote docker host, assume they want to use the remote host
-            if (ExternalDockerClientFilter.instance().isForced()) {
-                result = true;
-                reason = "fat.test.docker.host was configured";
-                break;
-            }
-
-            //State 3: Github actions build should always use local
-            if (Boolean.parseBoolean(System.getenv("GITHUB_ACTIONS"))) {
-                result = false;
-                reason = "GitHub Actions Build";
-                break;
-            }
-
-            //State 4: Earlier version of TestContainers didn't support docker for windows
-            // Assume a user on windows with no other preferences will want to use a remote host.
-            if (System.getProperty("os.name", "unknown").toLowerCase().contains("windows")) {
-                result = true;
-                reason = "Local operating system is Windows. Default container support not guaranteed.";
-                break;
-            }
-
-            //State 5: ARM architecture can cause performance/starting issues with x86 containers, so also assume remote as the default.
-            if (FATRunner.ARM_ARCHITECTURE) {
-                result = true;
-                reason = "CPU architecture is ARM. x86 container support and performance not guaranteed.";
-                break;
-            }
-
-            // Default, use local docker for local runs, and remote docker for remote (RTC) runs
-            result = !FATRunner.FAT_TEST_LOCALRUN;
-            reason = "fat.test.localrun set to " + FATRunner.FAT_TEST_LOCALRUN;
-        } while (false);
-
-        reason = result ? //
-                        "Remote docker host will be the highest priority. Reason: " + reason : //
-                        "Local docker host will be the highest priority. Reason: " + reason;
-
-        Log.info(c, "useRemoteDocker", reason);
-        return result;
     }
 }

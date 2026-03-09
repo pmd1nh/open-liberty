@@ -1,12 +1,11 @@
 /*******************************************************************************
- * Copyright (c) 2021, 2025 IBM Corporation and others.
+ * Copyright (c) 2021, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-2.0/
  *
  * SPDX-License-Identifier: EPL-2.0
- *
  *******************************************************************************/
 package io.openliberty.transport.http_fat;
 
@@ -23,11 +22,18 @@ import io.openliberty.transport.http_fat.accesslists.AccessListsTests;
 @RunWith(Suite.class)
 @SuiteClasses({
                 AccessListsTests.class,
+                InactivityTimeoutTests.class,
                 MaxOpenConnectionsTests.class,
                 PortOpenRetriesTests.class,
+                RequestSocketTest.class,
                 SoLingerTests.class,
                 SoReuseAddrTest.class,
-                TcpOptionsDefaultTests.class
+                TcpOptionsDefaultTests.class,
+                ContentTypeResponseHeaderTests.class,
+                AccessLogRolloverTest.class,
+                MaxMessageSizeLimitTests.class,
+                Expect100ContinueTest.class,
+                NettyConfigurationTests.class
 })
 
 public class FATSuite {

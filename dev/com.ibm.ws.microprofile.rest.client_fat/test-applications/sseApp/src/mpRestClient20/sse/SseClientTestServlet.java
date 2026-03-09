@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020, 2024 IBM Corporation and others.
+ * Copyright (c) 2020, 2025 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -87,6 +87,7 @@ public class SseClientTestServlet extends FATServlet {
     }
 
     @Test
+    @SkipForRepeat(MicroProfileActions.MP40_ID) // Skipping until Issue #33559 is resolved.
     public void testPublisherString(HttpServletRequest req, HttpServletResponse resp) throws Exception {
         try (SseClient client = builder.build(SseClient.class)) {
             GenericSubscriber<String> subscriber = new GenericSubscriber<>(3);
@@ -117,7 +118,7 @@ public class SseClientTestServlet extends FATServlet {
     }
 
     @Test
-    @SkipForRepeat({MicroProfileActions.MP50_ID, MicroProfileActions.MP60_ID, MicroProfileActions.MP61_ID, MicroProfileActions.MP70_EE10_ID, MicroProfileActions.MP70_EE11_ID}) // RESTEasy does not auto-detect media types - users must register custom MBR
+    @SkipForRepeat({MicroProfileActions.MP50_ID, MicroProfileActions.MP60_ID, MicroProfileActions.MP61_ID, MicroProfileActions.MP70_EE10_ID, MicroProfileActions.MP70_EE11_ID, MicroProfileActions.MP40_ID}) // RESTEasy does not auto-detect media types - users must register custom MBR. Skipping MP40 until Issue #33559 is resolved.
     public void testPublisherSomeObject(HttpServletRequest req, HttpServletResponse resp) throws Exception {
         try (SseClient client = builder.build(SseClient.class)) {
             GenericSubscriber<SomeObject> subscriber = new GenericSubscriber<>(7);

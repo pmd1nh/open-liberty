@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2023,2025 IBM Corporation and others.
+ * Copyright (c) 2023,2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -36,20 +36,22 @@ import jakarta.data.repository.Update;
  * Repository for the City entity, which uses IdClass to define a composite id
  * across the City name and stateName.
  */
-@Repository
+@Repository(dataStore = "java:app/env/data/DataStoreRef")
 public interface Cities {
-    @Find
+    @Query("SELECT areaCodes WHERE name = :name AND stateName = :stateName")
     Optional<Set<Integer>> areaCodes(String name, String stateName);
 
     @Find
     @OrderBy("name")
     Stream<AreaInfo> areaInfo(String stateName);
 
-    @Query("SELECT VERSION(THIS) WHERE ID(THIS) = ?1")
-    long currentVersion(CityId id);
+    @Query("FROM City WHERE (name=?1 AND id(this)<>?2)")
+    @OrderBy("stateName")
+    Stream<City> byNameButNotId(String cityName,
+                                CityId exceptFor);
 
-    @Query("SELECT VERSION(THIS) WHERE name = ?1 AND stateName = ?2")
-    long currentVersion(String city, String state);
+    @Query("SELECT VERSION(this) WHERE ID(this) = ?1")
+    long currentVersion(CityId id);
 
     @Delete
     void delete(City city); // copied from BasicRepository
@@ -114,9 +116,7 @@ public interface Cities {
     @Query("SELECT " + ID)
     @OrderBy("stateName")
     @OrderBy("name")
-    // TODO once #29073 is fixed, and update usage
-    // Stream<CityId> ids();
-    Stream<Object[]> ids();
+    Stream<CityId> ids();
 
     @Update
     City[] modifyData(City... citiesToUpdate);
@@ -139,6 +139,16 @@ public interface Cities {
     CursoredPage<City> smallerThanOrNotNamed(int maxPopulation,
                                              String nameToExclude,
                                              PageRequest pageReq);
+
+    @Query("""
+                    WHERE ?1 = id(this)
+                       OR id(this) = ?2
+                       OR id(this) = ?3
+                    """)
+    @OrderBy("name")
+    Stream<City> whereIdIsOneOf(CityId id1,
+                                CityId id2,
+                                CityId id3);
 
     @Find
     @OrderBy("stateName")

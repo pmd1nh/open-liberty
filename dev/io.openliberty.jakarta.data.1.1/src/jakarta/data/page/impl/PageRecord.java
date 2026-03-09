@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 IBM Corporation and others.
+ * Copyright (c) 2024,2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -16,6 +16,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 
+import jakarta.data.messages.Messages;
 import jakarta.data.page.Page;
 import jakarta.data.page.PageRequest;
 
@@ -27,6 +28,16 @@ public record PageRecord<T>(PageRequest pageRequest,
                 long totalElements,
                 boolean moreResults)
                 implements Page<T> {
+
+    public PageRecord(PageRequest pageRequest,
+                      List<T> content,
+                      long totalElements,
+                      boolean moreResults) {
+        this.content = List.copyOf(content);
+        this.moreResults = moreResults;
+        this.pageRequest = pageRequest;
+        this.totalElements = totalElements;
+    }
 
     public PageRecord(PageRequest req,
                       List<T> content,
@@ -88,7 +99,7 @@ public record PageRecord<T>(PageRequest pageRequest,
         if (totalElements >= 0)
             return totalElements;
         else
-            throw new IllegalStateException("total elements are not available");
+            throw new IllegalStateException(Messages.get("010.unknown.total"));
     }
 
     @Override
@@ -97,7 +108,7 @@ public record PageRecord<T>(PageRequest pageRequest,
             int maxPageSize = pageRequest.size();
             return (totalElements + (maxPageSize - 1)) / maxPageSize;
         } else {
-            throw new IllegalStateException("total elements are not available");
+            throw new IllegalStateException(Messages.get("010.unknown.total"));
         }
     }
 }

@@ -1,14 +1,11 @@
 /*******************************************************************************
- * Copyright (c) 2018, 2020 IBM Corporation and others.
+ * Copyright (c) 2018, 2024 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-2.0/
  *
  * SPDX-License-Identifier: EPL-2.0
- *
- * Contributors:
- *     IBM Corporation - initial API and implementation
  *******************************************************************************/
 package test.server.transport.http2;
 
@@ -43,13 +40,8 @@ public class Http2CompressionTests extends FATServletClient {
     private final static LibertyServer runtimeServer = LibertyServerFactory.getLibertyServer("http2ClientRuntime.tracing");
     private final static LibertyServer server = LibertyServerFactory.getLibertyServer("com.ibm.ws.transport.http2.fat.compression");
 
-    String defaultServletPath = "H2FATDriver/H2FATDriverServlet?hostName=";
-    String dataServletPath = "H2FATDriver/DataFrameTests?hostName=";
-    String genericServletPath = "H2FATDriver/GenericFrameTests?hostName=";
-    String methodServletPath = "H2FATDriver/HttpMethodTests?hostName=";
-
     @Rule
-    public TestName testName = new TestName();
+    public TestName testName = new Utils.CustomTestName();
 
     @BeforeClass
     public static void before() throws Exception {
@@ -63,6 +55,7 @@ public class Http2CompressionTests extends FATServletClient {
 
         server.startServer(true, true);
         runtimeServer.startServer(true, true);
+        H2FATApplicationHelper.preTestNettyCheck(runtimeServer, server);
     }
 
     @AfterClass
@@ -88,7 +81,7 @@ public class Http2CompressionTests extends FATServletClient {
 
     @Test
     public void testCompression() throws Exception {
-        runTest(dataServletPath, testName.getMethodName());
+        runTest(Http2FullModeTests.dataServletPath, testName.getMethodName());
     }
 
 }

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2024 IBM Corporation and others.
+ * Copyright (c) 2024,2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -16,6 +16,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 
+import jakarta.data.messages.Messages;
 import jakarta.data.page.CursoredPage;
 import jakarta.data.page.PageRequest;
 import jakarta.data.page.PageRequest.Cursor;
@@ -31,6 +32,20 @@ public record CursoredPageRecord<T>(
                 PageRequest nextPageRequest,
                 PageRequest previousPageRequest)
                 implements CursoredPage<T> {
+
+    public CursoredPageRecord(List<T> content,
+                              List<Cursor> cursors,
+                              long totalElements,
+                              PageRequest pageRequest,
+                              PageRequest nextPageRequest,
+                              PageRequest previousPageRequest) {
+        this.content = List.copyOf(content);
+        this.cursors = List.copyOf(cursors);
+        this.nextPageRequest = nextPageRequest;
+        this.pageRequest = pageRequest;
+        this.previousPageRequest = previousPageRequest;
+        this.totalElements = totalElements;
+    }
 
     public CursoredPageRecord(List<T> content,
                               List<PageRequest.Cursor> cursors,
@@ -108,7 +123,7 @@ public record CursoredPageRecord<T>(
         if (totalElements >= 0)
             return totalElements;
         else
-            throw new IllegalStateException("total elements are not available");
+            throw new IllegalStateException(Messages.get("010.unknown.total"));
     }
 
     @Override
@@ -117,7 +132,7 @@ public record CursoredPageRecord<T>(
             int maxPageSize = pageRequest.size();
             return (totalElements + (maxPageSize - 1)) / maxPageSize;
         } else {
-            throw new IllegalStateException("total elements are not available");
+            throw new IllegalStateException(Messages.get("010.unknown.total"));
         }
     }
 }

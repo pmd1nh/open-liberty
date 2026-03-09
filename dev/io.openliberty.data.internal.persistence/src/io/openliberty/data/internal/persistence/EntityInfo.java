@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022,2025 IBM Corporation and others.
+ * Copyright (c) 2022,2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -76,6 +76,7 @@ public class EntityInfo {
     final Class<?> idType; // type of the id, which could be a JPA IdClass for composite ids
     final SortedMap<String, Member> idClassAttributeAccessors; // null if no IdClass
     final boolean inheritance;
+    final boolean isHibernate;
     final String name; // entity name to use in query language. If a record, the name will be [RecordName]Entity.
     final Class<?> recordClass; // null if not a record
     final String versionAttributeName; // null if unversioned
@@ -96,6 +97,7 @@ public class EntityInfo {
                Map<Class<?>, List<String>> relationAttributeNames,
                Class<?> idType,
                SortedMap<String, Member> idClassAttributeAccessors,
+               boolean isHibernate,
                String versionAttributeName,
                EntityManagerBuilder entityManagerBuilder) {
         this.name = entityName;
@@ -109,6 +111,7 @@ public class EntityInfo {
         this.relationAttributeNames = relationAttributeNames;
         this.idType = idType;
         this.idClassAttributeAccessors = idClassAttributeAccessors;
+        this.isHibernate = isHibernate;
         this.recordClass = recordClass;
         this.versionAttributeName = versionAttributeName;
 

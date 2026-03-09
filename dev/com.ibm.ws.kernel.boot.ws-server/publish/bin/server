@@ -2,7 +2,7 @@
 ###############################################################################
 # WebSphere Application Server liberty launch script
 #
-# Copyright (c) 2011, 2023 IBM Corporation and others.
+# Copyright (c) 2011, 2026 IBM Corporation and others.
 # All rights reserved. This program and the accompanying materials
 # are made available under the terms of the Eclipse Public License 2.0
 # which accompanies this distribution, and is available at
@@ -400,6 +400,7 @@ serverEnvDefaults()
     unset PID_FILE
   fi
 
+   # Determine location of java command.
   if [ -z "${JAVA_HOME}" ]
   then
     if [ -z "${JRE_HOME}" ]
@@ -492,39 +493,62 @@ serverEnv()
   readServerEnv "${WLP_USER_DIR}/shared/server.env"
   readServerEnv "${SERVER_CONFIG_DIR}/server.env"
   serverEnvDefaults
+  
+  # Determine Java version and add z/OS native access flag for Java 24+ to avoid warnings
+  if [ "${uname}" = OS/390 ]; then
+    # Try to determine Java version if JAVA_HOME is set
+    if [ -n "${JAVA_HOME}" ] && [ -f "${JAVA_HOME}/release" ]; then
+      JAVA_VERSION_MAJOR=$(readNativeFile "${JAVA_HOME}/release" '[A-Za-z0-9]' | LC_ALL=C tr -d '\r' | grep ^JAVA_VERSION\s*= | tr -d '"' | awk -F= '{print $2}' | awk -F. '{if ($1 > 1) {print $1} else {print $2}}')
+      # Only add flag if version was successfully detected and is >= 24
+      if [ -n "${JAVA_VERSION_MAJOR}" ] && [ "${JAVA_VERSION_MAJOR}" -ge 24 ] 2>/dev/null; then
+        case "${JVM_OPTIONS_QUOTED}" in
+          *--enable-native-access=ALL-UNNAMED*) ;;
+          *)
+            JVM_OPTIONS_QUOTED="${JVM_OPTIONS_QUOTED} '--enable-native-access=ALL-UNNAMED'"
+            ;;
+        esac
+      fi
+    fi
+  fi
 }
 
+## Initialize base JVM options that are always needed
+## Avoids HeadlessException on all platforms and Liberty JVMs appearing as applications and stealing focus on Mac.
+## Declare allowAttachSelf=true so that the VM will permit a late self attach if localConnector-1.0 is enabled
+## need -Dcom.ibm.tools.attach.enable=yes for java 11 on z/OS
+## Note: z/OS native access flag will be added later after Java version is determined
 ##
-## serverEnvAndJVMOptions: Read server.env files and set environment variables.
-##                         Read jvm.options file into ${JVM_OPTIONS_QUOTED}
-serverEnvAndJVMOptions()
+initializeBaseJVMOptions()
 {
-  serverEnv
-
-  # Avoids HeadlessException on all platforms and Liberty JVMs appearing as applications and stealing focus on Mac.
-  # Declare allowAttachSelf=true so that the VM will permit a late self attach if localConnector-1.0 is enabled
-  # need -Dcom.ibm.tools.attach.enable=yes for java 11 on z/OS
   if [ "${uname}" = OS/390 ]; then
     JVM_OPTIONS_QUOTED="-Djava.awt.headless=true -Djdk.attach.allowAttachSelf=true -Dcom.ibm.tools.attach.enable=yes"
   else
     JVM_OPTIONS_QUOTED="-Djava.awt.headless=true -Djdk.attach.allowAttachSelf=true"
   fi
   SERVER_JVM_OPTIONS_QUOTED=${JVM_OPTIONS_QUOTED}
+}
 
+
+## Load all jvm.options files in precedence order
+## Once a given jvm option is set, it will be overridden if a duplicate
+## is seen later. They will both be written in to the options parameter
+## but the last one written will take precedence.  If none are read
+## the script will try to read the jvm.options in etc
+##
+loadJVMOptionsFiles()
+{
   rc=0
-
-
-  # The order of merging the jvm.option files sets the precedence.
-  # Once a given jvm option is set, it will be overridden if a duplicate
-  # is seen later. They will both be written in to the options parameter
-  # but the last one written will take precedence.  If none are read
-  # the script will try to read the jvm.options in etc
+  
+  # Ensure base options are initialized
+  if [ -z "$SERVER_JVM_OPTIONS_QUOTED" ]; then
+    initializeBaseJVMOptions
+  fi
 
   TEMP_SAVED_OPTIONS=$SERVER_JVM_OPTIONS_QUOTED
   mergeJVMOptions "${WLP_USER_DIR}/shared/jvm.options"
   if [ $rc -ne 0 ]; then
     return $rc
-  fi  
+  fi
   # This location is intentionally not documented  but removing might break existing installations
   mergeJVMOptions "${WLP_INSTALL_DIR}/usr/shared/jvm.options"
   if [ $rc -ne 0 ]; then
@@ -548,36 +572,116 @@ serverEnvAndJVMOptions()
   if [ $READ_ETC -eq 1 ]; then
     SERVER_JVM_OPTIONS_QUOTED=$TEMP_SAVED_OPTIONS
     mergeJVMOptions "${WLP_INSTALL_DIR}/etc/jvm.options"
+    if [ $rc -ne 0 ]; then
+      return $rc
+    fi
   fi
+  
+  return $rc
+}
 
-  # Determine location of Java Platform Module System (JPMS) modules directory
-  # Set JAVA_HOME if it is not already set.
-  if [ -z "${JAVA_HOME}" ]; then
 
-    # JAVA_HOME not set.  Locate java using the PATH.
+## Detect and validate JAVA_HOME if not already set.
+## Need JAVA_HOME to determine if we are running Java 9+.  Possibly other reasons.
+##
+detectJavaHome()
+{
+  [ -n "${JAVA_HOME}" ] && return 0
+  
+   # JAVA_HOME not set.  Locate java using the PATH.
     JAVA_PATH=$(command -v java)
     if [ -n "${JAVA_PATH}" ] ; then
 
+      # Resolve symlinks.  JAVA_HOME is parent of parent of 'java'
       REAL_JAVA_PATH=$(findRealPath "${JAVA_PATH}")
       JAVA_HOME=$(dirname "${REAL_JAVA_PATH}")/..
-      # The "exit" will cause JAVA_HOME to be unset in the unlikely case that JAVA_HOME is not a directory
+
+      # The next statement resolves the ".." and verifies JAVA_HOME is a directory.
+      # If JAVA_HOME is not a directory, the cd command will exit the subshell causing JAVA_HOME to be unset.
       JAVA_HOME="$(unset CDPATH; cd "${JAVA_HOME}" || exit; pwd)"
-      export JAVA_HOME
 
-      if [ -n "${REAL_JAVA_PATH}" ]; then
-         JPMS_MODULE_FILE_LOCATION=$(dirname "$(dirname "${REAL_JAVA_PATH}")")/lib/modules
-      fi
-    fi
-  else
-    JPMS_MODULE_FILE_LOCATION="${JAVA_HOME}/lib/modules"
+     # If JAVA_HOME does not appear to be a valid Java installation (missing 'lib' or 'include' directories), display a warning.
+     # Split into 3 tests for portability.  As a one-line test, it is problematic for IBM i and possibly other shells.
+     # Need to unset JAVA_HOME when location is not valid, otherwise it causes a hang on the warning message.
+     if [ -z "$JAVA_HOME" ]; then
+       issueMessage --message:warning.javaHomeNotSet
+     elif [ ! -d "$JAVA_HOME/lib" ] && [ ! -d "$JAVA_HOME/jre/lib" ]; then
+       unset JAVA_HOME
+       issueMessage --message:warning.javaHomeNotSet
+     elif [ ! -d "$JAVA_HOME/include" ]; then
+       unset JAVA_HOME
+       issueMessage --message:warning.javaHomeNotSet
+     else
+       export JAVA_HOME
+     fi
+
+    fi  # if JAVA_HOME is not set and java is not in the PATH, then we cannot find Java.
+}
+
+## Load Java version-specific options (java9.options, java24.options)
+##
+loadJavaVersionSpecificOptions()
+{
+  [ -z "${JAVA_HOME}" ] && return 0
+  
+  JPMS_MODULE_FILE_LOCATION=${JAVA_HOME}/lib/modules
+  
+  # If there is a 'release' file under JAVA_HOME, examine it to see if JAVA_VERSION is set.  If so, determine which version of Java we will be using.
+  if [ -f "${JAVA_HOME}/release" ]; then
+      JAVA_VERSION_MAJOR=$(readNativeFile "${JAVA_HOME}/release" '[A-Za-z0-9]' | LC_ALL=C tr -d '\r' | grep ^JAVA_VERSION\s*= | tr -d '"' | awk -F= '{print $2}' | awk -F. '{if ($1 > 1) {print $1} else {print $2}}')
   fi
-
-  # If we are running on Java 9 and up, apply Liberty's built-in java 9 options  
+  
   if [ -f "${JPMS_MODULE_FILE_LOCATION}" ]; then
-    mergeJVMOptions "${WLP_INSTALL_DIR}/lib/platform/java/java9.options"
+      if [ -n "${JAVA_VERSION_MAJOR}" ]; then
+          if [ ${JAVA_VERSION_MAJOR} -ge 24 ] 2>/dev/null; then
+              mergeJVMOptions "${WLP_INSTALL_DIR}/lib/platform/java/java24.options"
+          else
+              mergeJVMOptions "${WLP_INSTALL_DIR}/lib/platform/java/java9.options"
+          fi
+      else
+          mergeJVMOptions "${WLP_INSTALL_DIR}/lib/platform/java/java9.options"
+      fi
   fi
+}
 
-  return $rc
+## Add platform-specific JVM flags
+##
+addPlatformSpecificJvmFlags()
+{
+  # In Java 24+, JNI usage must be explicitly granted when starting the JVM - https://openjdk.org/jeps/472 (needed for z/OS)
+  if [ -n "${JAVA_VERSION_MAJOR}" ] && [ "${uname}" = "OS/390" ]; then
+      # Only add flag if version comparison succeeds (suppress errors for invalid values)
+      if [ "${JAVA_VERSION_MAJOR}" -ge 24 ] 2>/dev/null; then
+          # Check if the flag is not already present in SERVER_JVM_OPTIONS_QUOTED or JVM_OPTIONS_QUOTED
+          case "${SERVER_JVM_OPTIONS_QUOTED}" in
+              *--enable-native-access=ALL-UNNAMED*) ;;
+              *)
+                  SERVER_JVM_OPTIONS_QUOTED="${SERVER_JVM_OPTIONS_QUOTED} '--enable-native-access=ALL-UNNAMED'"
+                  ;;
+          esac
+          case "${JVM_OPTIONS_QUOTED}" in
+              *--enable-native-access=ALL-UNNAMED*) ;;
+              *)
+                  JVM_OPTIONS_QUOTED="${JVM_OPTIONS_QUOTED} '--enable-native-access=ALL-UNNAMED'"
+                  ;;
+          esac
+      fi
+  fi
+}
+
+## serverEnvAndJVMOptions: Read server.env files and set environment variables.
+##                         Read jvm.options file into ${JVM_OPTIONS_QUOTED}
+##                         Set JAVA_VERSION_MAJOR from ${JPMS_MODULE_FILE_LOCATION}/../../release file, if found
+serverEnvAndJVMOptions()
+{
+  serverEnv
+  initializeBaseJVMOptions
+  loadJVMOptionsFiles || return $?
+  detectJavaHome
+  loadJavaVersionSpecificOptions
+  addPlatformSpecificJvmFlags
+  enableFIPS140_3
+  return 0
 }
 
 # Resolve symbolic links in a path iteratively
@@ -594,25 +698,24 @@ findRealPath() {
 
       resolvedPath=$(realpath "${path}" 2>/dev/null)
     fi
-  
+
     # If unsuccessful, try readlink -e
     if [ -z "${resolvedPath}" ] && command -v readlink >/dev/null; then
       resolvedPath=$(readlink -e "${path}" 2>/dev/null)
     fi
 
-    # If unsuccessful, try cd -P command. 
+    # If unsuccessful, try cd -P command.
     if [ -z "${resolvedPath}" ]; then
-
       resolvedPath=$(unset CDPATH; cd -P "${path}" >/dev/null 2>&1 && pwd)
     fi
 
   fi
 
   # If none of those methods work, try a more basic approach
-  if [ -z "${resolvedPath}" ]; then 
+  if [ -z "${resolvedPath}" ]; then
     symLinkCount=0
 
-    # Loop ends when resolvedPath does not contain any symlinks  
+    # Loop ends when resolvedPath does not contain any symlinks
     while true; do
 
       resolvedPath=""
@@ -621,7 +724,7 @@ findRealPath() {
       set -- $path
       pathContainsSymLink="false"
       for component; do
-	  
+
         if [ -z "$component" ]; then
           continue # Skip empty components
         fi
@@ -643,9 +746,13 @@ findRealPath() {
         if [ -L "$resolvedPath" ]; then
           pathContainsSymLink="true"
           symLinkCount=$((symLinkCount + 1))
-		  
+
           # Get the target of the symbolic link
           target=$(ls -l "$resolvedPath" | awk '{print $NF}')
+          # The line above might have problems with special characters. Possible replacement to consider and test:
+          # lsOutput=$(ls -ld "$resolvedPath")
+          # lsoutput should look something like: 'lrwxr-xr-x  1 user group  16 Jan  1 12:00 myLink -> /some/real/path'
+          # target=${lsOutput#* -> }
 
           # Don't lose the remaining path past the symlink
           if [ "$resolvedPath" = "$path" ]; then
@@ -657,7 +764,7 @@ findRealPath() {
 
           # Save the prefix up one level from the symlink
           savePrefix=$(cd "$(dirname "$resolvedPath")" && pwd)
-		  
+
           case "$target" in
           /*)
             # Absolute path case
@@ -701,13 +808,13 @@ mergeJVMOptions()
     READ_ETC=0
     saveIFS=$IFS
     IFS=$newline
-    
+
     for option in $(readNativeFile "$jvmOptions" '[#-]' | LC_ALL=C tr -d '\r'); do
       if [ -n "$option" ]; then
         case $option in
-          \#*) 
+          \#*)
               ;;
-          *)
+            *)
               escapeForEval "${option}"
               option="${escapeForEvalResult}"
               SERVER_JVM_OPTIONS_QUOTED="${SERVER_JVM_OPTIONS_QUOTED} ${option}"
@@ -715,6 +822,7 @@ mergeJVMOptions()
         esac
       fi
     done
+
     IFS=$saveIFS
   fi
 }
@@ -751,7 +859,7 @@ readServerEnv()
           # characters. Only accept alphanumeric variable names to avoid eval complexities.
           if [ "$uname" != "SunOS" ] && [ "$uname" != "OS/390" ]; then
 
-            # This is the preferred pattern, because it handles characters 
+            # This is the preferred pattern, because it handles characters
             # from multiple languages, but it doesn't work on Solaris.
             var=$(safeEcho "$line" | sed -n -e 's/^\([_[:alpha:]][_[:alnum:]]*\)=.*/\1/p')
 
@@ -773,7 +881,7 @@ readServerEnv()
               then
                  eval "export ${var}"
               else
-                 # Variable expansion is not enabled.  Just set the variable to whatever is on the right side 
+                 # Variable expansion is not enabled.  Just set the variable to whatever is on the right side
                  # of the assignment and export it.  If a later line enables variable expansion, the source
                  # command will reassign the variable (which is already exported) to the resolved value.
                  extractValueAndEscapeForEval "${line}"
@@ -843,7 +951,7 @@ serverWorkingDirectory()
     case "${SERVER_WORKING_DIR}" in
       /*) len=${#SERVER_WORKING_DIR}
           if [ $len -eq 1 ]; then
-            SERVER_WORKING_DIR=$SERVER_OUTPUT_DIR 
+            SERVER_WORKING_DIR=$SERVER_OUTPUT_DIR
           fi ;;
       *) SERVER_WORKING_DIR="${SERVER_OUTPUT_DIR}/${SERVER_WORKING_DIR}" ;;
     esac
@@ -890,7 +998,7 @@ javaCmd()
 {
   JAVA_CMD_LOG=$1
   shift
-  
+
   # Filter all of the -D and -X arguments off of the argument line and add them to $JVM_OPTIONS_QUOTED
   REMAINING_ARGS=""
   for option in "$@"; do
@@ -903,17 +1011,17 @@ javaCmd()
       elif [ $ACTION = "checkpoint" ] && [ -z "${option##--at=*}" ]; then
         CHECKPOINT_AT=${option#--at=}
       else
-        if [ -z "$REMAINING_ARGS" ] ; then
-          REMAINING_ARGS="$option"
+        # Quote each option when adding to REMAINING_ARGS.
+        escapeForEval "${option}"
+        if [ -z "$REMAINING_ARGS" ]; then
+          REMAINING_ARGS="${escapeForEvalResult}"
         else
-          REMAINING_ARGS="$REMAINING_ARGS $option"
-        fi  
+          REMAINING_ARGS="$REMAINING_ARGS ${escapeForEvalResult}"
+        fi
       fi
-    else
-      REMAINING_ARGS="$REMAINING_ARGS $option"
     fi
   done
-  
+
   if [ $ACTION = "checkpoint" ]; then
     if [ -z "$CHECKPOINT_AT" ]; then
       CHECKPOINT_AT="beforeAppStart"
@@ -937,7 +1045,7 @@ javaCmd()
       JVM_OPTIONS_QUOTED="$JVM_OPTIONS_QUOTED -Dio.openliberty.checkpoint.criu.unprivileged=true"
     fi
     if [ -n "$CRIU_LOG_LEVEL" ]; then
-      # A system property is used here to avoid having to read env on the 
+      # A system property is used here to avoid having to read env on the
       # checkpoint side. If reading the env from the Java checkpoint side we need
       # to make the env an immutable value but we don't want to force the
       # same CRIU_LOG_LEVEL on both the checkpoint and restore side here.
@@ -945,20 +1053,40 @@ javaCmd()
     fi
     criuEnvDefaults
   fi
-  
+
   # Set all the parameters for the java command.  We use eval so that each line
   # in jvm.options is treated as a distinct argument.
-  eval "set -- ${JAVA_AGENT_QUOTED} ${JVM_OPTIONS_QUOTED} ${JAVA_DEBUG} ${JVM_ARGS} -jar ${WLP_INSTALL_DIR_QUOTED}/bin/tools/ws-server.jar ""$REMAINING_ARGS"
+  # For client JVMs (not server launch), add IPv4 preference if set, in order to match server's IP stack
+  if [ -z "${JAVA_CMD_LOG}" ]; then
+  
+    # This is a client JVM invocation - load server options and extract IPv4 preference if not already done
+    if [ -z "$SERVER_JVM_OPTIONS_QUOTED" ]; then
+      loadJVMOptionsFiles
+    fi
+    
+    if [ -z "$SERVER_PREFER_IPV4" ]; then
+      extractPreferIPv4Stack
+    fi
+    
+    # Build the complete Java command line arguments and store them in the shell's positional parameters ($1, $2, $3, etc.).
+    # Add IPv4 preference. SERVER_PREFER_IPV4 should either be empty or set to something containing no spaces.
+    eval "set -- ${JAVA_AGENT_QUOTED} ${JVM_OPTIONS_QUOTED} ${JAVA_DEBUG} ${JVM_ARGS} $SERVER_PREFER_IPV4 -jar ${WLP_INSTALL_DIR_QUOTED}/bin/tools/ws-server.jar ""$REMAINING_ARGS"
+    
+  else
+    # Build the complete Java command line arguments and store them in the shell's positional parameters ($1, $2, $3, etc.).
+    # This is for a server JVM invocation.
+    eval "set -- ${JAVA_AGENT_QUOTED} ${JVM_OPTIONS_QUOTED} ${JAVA_DEBUG} ${JVM_ARGS} -jar ${WLP_INSTALL_DIR_QUOTED}/bin/tools/ws-server.jar ""$REMAINING_ARGS"
+  fi
   ARGS="$@"
 
   if [ $ACTION = "checkpoint" ]; then
     if [ -d "${SERVER_OUTPUT_DIR}/workarea/checkpoint" ]; then
       rm -rf ${SERVER_OUTPUT_DIR}/workarea/checkpoint
-      rc=$? 
+      rc=$?
       if [ $rc -ne 0 ]; then
          issueMessage --message:error.checkpoint.delete "${SERVER_OUTPUT_DIR}/workarea/checkpoint"
          return $rc
-      fi   
+      fi
     fi
   fi
 
@@ -973,6 +1101,7 @@ javaCmd()
     # output. This is done so we can restore in the foreground (run)
     # and in the background (start)
     CHECKPOINT_CONSOLE_LOG="${X_LOG_DIR}/${X_LOG_FILE}"
+
     # remove existing console log and the possible backup for checkpoint
     rmIfExist "${CHECKPOINT_CONSOLE_LOG}"
     rmIfExist "${X_LOG_DIR}/checkpoint-${X_LOG_FILE}"
@@ -1012,7 +1141,7 @@ javaCmd()
       fi
     fi
     kill $TAIL_PID
-    # Above JAVA_CMD should terminate after a criu dump and SIGKILL. 
+    # Above JAVA_CMD should terminate after a criu dump and SIGKILL.
     # Check for expected return code of 137 from the KILL.
     if [ $rc -eq 137 ]; then
       backupWorkarea
@@ -1092,7 +1221,57 @@ serverCmdOS400()
   fi
 }
 
+## extractPreferIPv4Stack:
+##   Extracts the java.net.preferIPv4Stack value from SERVER_JVM_OPTIONS_QUOTED
+##   and sets SERVER_PREFER_IPV4 so it can be passed to the server command client JVM.
 ##
+##   NOTE:
+##     preferIPv4Stack is explicitly propagated because a mismatch between
+##     client and server IP stacks (IPv4 vs IPv6) can cause silent command
+##     timeouts when using the server script.
+##
+##   Supported formats in jvm.options:
+##     -Djava.net.preferIPv4Stack=true    -Djava.net.preferIPv4Stack="true"
+##     -Djava.net.preferIPv4Stack=false   -Djava.net.preferIPv4Stack="false"
+##
+##   Note: Spaces around '=' are NOT supported in jvm.options (It's invalid Java syntax).
+##
+extractPreferIPv4Stack()
+{
+  SERVER_PREFER_IPV4=""
+
+  case $SERVER_JVM_OPTIONS_QUOTED in
+     *-Djava.net.preferIPv4Stack=*)
+        # Remove everything up to and including the property name and '='
+        # The remaining string begins with the value, but may include additional JVM options after it.
+        after_equals=${SERVER_JVM_OPTIONS_QUOTED#*-Djava.net.preferIPv4Stack=}
+
+        # Extract value - handle common cases efficiently.
+        # The full option string is wrapped in quotes by escapeForEval, so the value
+        # is expected to end with a closing single quote.
+        case $after_equals in
+           true\'*)
+             # -Djava.net.preferIPv4Stack=true
+             value=true
+             ;;
+          false\'*)
+             # -Djava.net.preferIPv4Stack=false
+             value=false
+             ;;
+          *)
+             # Handle quoted values: -Djava.net.preferIPv4Stack="true"
+             value=$after_equals
+             value=${value#\"}        # Remove leading double quote if present
+             value=${value%%\'*}      # Extract up to first single quote
+             value=${value%%\"*}      # Extract up to first double quote
+             ;;
+        esac
+
+        SERVER_PREFER_IPV4="-Djava.net.preferIPv4Stack=$value"
+        ;;
+  esac
+}
+
 ## serverCmd: Launch a server process.
 ##
 ##   backgroundLogFile
@@ -1131,7 +1310,7 @@ serverCmd()
 
   SAVE_JVM_OPTIONS_QUOTED=${JVM_OPTIONS_QUOTED}
   JVM_OPTIONS_QUOTED=${SERVER_JVM_OPTIONS_QUOTED}
-  
+
   SAVE_IBM_JAVA_OPTIONS=${IBM_JAVA_OPTIONS}
   IBM_JAVA_OPTIONS=${SERVER_IBM_JAVA_OPTIONS}
   SAVE_OPENJ9_JAVA_OPTIONS=${OPENJ9_JAVA_OPTIONS}
@@ -1146,6 +1325,7 @@ serverCmd()
   fi
 
   if $os400lib; then
+    # Start the server
     serverCmdOS400 "${SERVER_CMD_BACKGROUND_LOG}" "${SERVER_NAME}" "$@"
     rc=$?
 
@@ -1156,13 +1336,13 @@ serverCmd()
     if [ -n "${SERVER_CMD_BACKGROUND_LOG}" ]; then
       PID=`cat "${X_PID_FILE}"`
 
-      # Verify/wait for the process to start
+      # Verify/wait for the server process to start
       javaCmd '' "${SERVER_NAME}" --pid="${PID}" --status:start "$@"
       rc=$?
     fi
 
   elif [ "${uname}" = OS/390 ] && [ -n "${WLP_ZOS_PROCEDURE}" ] && [ -e "${WLP_INSTALL_DIR}/lib/native/zos/s390x/bbgzcsl" ]; then
-      # Start the STC procedure
+      # Start the STC procedure. (Start the server)
       if [ -n "${WLP_ZOS_JOBNAME}" ]; then
         "${WLP_INSTALL_DIR}/lib/native/zos/s390x/bbgzcsl" "${WLP_ZOS_PROCEDURE}" "${SERVER_NAME}" "${X_PID_FILE}" "${WLP_ZOS_JOBNAME}" "$@"
       else
@@ -1176,8 +1356,8 @@ serverCmd()
       OPENJ9_JAVA_OPTIONS=${SAVE_OPENJ9_JAVA_OPTIONS}
 
       if [ $rc = 0 ]; then
-        # Verify/wait for the process to start
-        PID=`cat "${X_PID_FILE}"`
+        # Verify/wait for the server process to start
+        PID=$(cat "${X_PID_FILE}")
         javaCmd '' "${SERVER_NAME}" --pid="${PID}" --status:start "$@"
         rc=$?
 
@@ -1222,14 +1402,15 @@ serverCmd()
         fi
       fi
 
-  
+
   else
     X_CMD="${JAVA_CMD} ${ARGS}"
     export X_CMD
 
+    # Start the server
     javaCmd "${SERVER_CMD_BACKGROUND_LOG}" "${SERVER_NAME}" "$@"
     rc=$?
-      
+
     PID=$!
 
     JVM_OPTIONS_QUOTED=${SAVE_JVM_OPTIONS_QUOTED}
@@ -1237,13 +1418,13 @@ serverCmd()
     OPENJ9_JAVA_OPTIONS=${SAVE_OPENJ9_JAVA_OPTIONS}
 
     if [ -n "${SERVER_CMD_BACKGROUND_LOG}" ]; then
-      # Verify/wait for the process to start
+      # Verify/wait for the server process to start
       javaCmd '' "${SERVER_NAME}" --pid="${PID}" --status:start "$@"
       rc=$?
       # write the pid file if return is OK or UNKNOWN
       if [ $rc = 0 -o $rc = $SERVER_UNKNOWN_STATUS ]; then
           safeEcho "${PID}" > "${X_PID_FILE}"
-      fi        
+      fi
     fi
   fi
   return $rc
@@ -1328,12 +1509,12 @@ criuRestore()
   if [ $rc -ne 0 ]; then
     issueMessage --message:error.checkpoint.workarea.restore "${SERVER_OUTPUT_DIR}/workarea/checkpoint/workarea"
     return $rc
-  fi 
+  fi
 
   BACKGROUND_RESTORE=$1
   if [ -z "${CRIU_LOG_LEVEL}" ]; then
     CRIU_LOG_LEVEL=2
-  fi  
+  fi
 
   checkCriuUnprivileged
   if [ $DO_CRIU_UNPRIVILEGED = true ]; then
@@ -1349,8 +1530,10 @@ criuRestore()
   then
     mkdirs "${X_PID_DIR}"
     rmIfExist "${X_PID_FILE}"
+
+    # start server (Restore server)
     $CRIU_RESTORE_PATH restore --skip-file-rwx-check --cpu-cap=none --file-locks --tcp-established --images-dir=${SERVER_OUTPUT_DIR}/workarea/checkpoint/image \
-      --shell-job --verbosity=${CRIU_LOG_LEVEL} --log-file ${X_LOG_DIR}/checkpoint/restore.log ${CRIU_EXTRA_ARGS} \
+      --shell-job --verbosity=${CRIU_LOG_LEVEL} --log-file ${CUR_X_LOG_DIR}/checkpoint/restore.log ${CRIU_EXTRA_ARGS} \
       --pidfile ${X_PID_FILE} \
       --restore-detached
     rc=$?
@@ -1361,14 +1544,14 @@ criuRestore()
       IBM_JAVA_OPTIONS=${SAVE_IBM_JAVA_OPTIONS}
       OPENJ9_JAVA_OPTIONS=${SAVE_OPENJ9_JAVA_OPTIONS}
 
-      # Verify/wait for the process to start
+      # Verify/wait for the server process to start
       javaCmd '' "${SERVER_NAME}" --pid="${PID}" --status:start
       rc=$?
       # write the pid file if return is OK or UNKNOWN
       if [ $rc = 0 -o $rc = $SERVER_UNKNOWN_STATUS ]; then
         safeEcho "${PID}" > "${X_PID_FILE}"
       fi
-    fi        
+    fi
   else
     # For checkpoint we always write to the log file.
     # Use tail to bring the content to the console output
@@ -1379,7 +1562,7 @@ criuRestore()
     trap "killSilent $TAIL_PID" EXIT
 
     $CRIU_RESTORE_PATH restore --skip-file-rwx-check --cpu-cap=none --file-locks --tcp-established --images-dir=${SERVER_OUTPUT_DIR}/workarea/checkpoint/image \
-      --shell-job --verbosity=${CRIU_LOG_LEVEL} --log-file ${X_LOG_DIR}/checkpoint/restore.log ${CRIU_EXTRA_ARGS}
+      --shell-job --verbosity=${CRIU_LOG_LEVEL} --log-file ${CUR_X_LOG_DIR}/checkpoint/restore.log ${CRIU_EXTRA_ARGS}
     rc=$?
 
     kill $TAIL_PID
@@ -1409,19 +1592,35 @@ restoreServer()
     fi
   done
 
-  # restore artifacts and environment prior to checkpoint here
-    
+  # Use the log dir settings from checkpoint
+  # The exception is for the CUR_X_LOG_DIR which gets used for the checkpoint restore log
+  CUR_X_LOG_DIR=${X_LOG_DIR}
+  if [ -f "${SERVER_OUTPUT_DIR}/workarea/checkpoint/.logdir.properties" ]; then
+    eval ". ${SERVER_OUTPUT_DIR}/workarea/checkpoint/.logdir.properties"
+    export REAL_X_LOG_DIR
+    export LOG_DIR
+    export X_LOG_DIR
+    export X_LOG_FILE
+  fi
+
   # no good way to check for criu support since fast startup is imperative
   #   just let criu invocation fail with a hopefully informative error message.
   mkdirs ${X_LOG_DIR}/checkpoint
+  mkdirs ${CUR_X_LOG_DIR}/checkpoint
 
-  # save off the log during checkpoint and start fresh from restore 
-  RESTORE_CONSOLE_LOG="${X_LOG_DIR}/${X_LOG_FILE}"
+  # save off the log during checkpoint and start fresh from restore
+  if [ -z "$REAL_X_LOG_DIR" ]
+  then
+    RESTORE_CONSOLE_LOG="${X_LOG_DIR}/${X_LOG_FILE}"
+  else
+    RESTORE_CONSOLE_LOG="${REAL_X_LOG_DIR}/${X_LOG_FILE}"
+  fi
+
   CHECKPOINT_CONSOLE_LOG="${X_LOG_DIR}/checkpoint-${X_LOG_FILE}"
   backupIfNeededOrRemove $RESTORE_CONSOLE_LOG $CHECKPOINT_CONSOLE_LOG
   mkdirs "${X_LOG_DIR}"
   touchIfNotExist "${RESTORE_CONSOLE_LOG}"
- 
+
   # record the start of restoreTime
   echo `date +%s%3N` > ${SERVER_OUTPUT_DIR}/workarea/checkpoint/restoreTime
 
@@ -1442,7 +1641,7 @@ restoreServer()
   env | grep -E "^[^\=]*.=" > ${SERVER_OUTPUT_DIR}/workarea/checkpoint/.env.properties
 
   rm -f ${SERVER_OUTPUT_DIR}/workarea/checkpoint/.restoreFailedMarker
-  
+
   criuRestore $BACKGROUND_RESTORE
   rc=$?
   if [ -f "${SERVER_OUTPUT_DIR}/workarea/checkpoint/.restoreFailedMarker" ]; then
@@ -1489,12 +1688,12 @@ defineEscapeForEvalFunctions()
       {
         escapeForEvalResult=\\'\${1//\\'/\\'\\\"\\'\\\"\\'}\\'
       }
-  
+
       extractValueAndEscapeForEval()
       {
         escapeForEval \"\${1#*=}\"
       }
-  
+
       substitutePrefixVar()
       {
         case \$1 in
@@ -1512,7 +1711,7 @@ defineEscapeForEvalFunctions()
     {
       escapeForEvalResult=\'$(safeEcho "$1" | sed s/\'/\'\"\'\"\'/g)\'
     }
-  
+
     ##
     ## extractValueAndEscapeForEval: Extract the value of a var=value string,
     ##                               and set escapeForEvalResult with the result.
@@ -1521,7 +1720,7 @@ defineEscapeForEvalFunctions()
     {
       escapeForEvalResult=\'`safeEcho "$1" | sed -e 's/[^=]*=//' -e s/\'/\'\"\'\"\'/g`\'
     }
-  
+
     ##
     ## substitutePrefixVar: If $1 has a prefix @$2@, set substitutePrefixVarResult
     ##                      to $1 with the prefix replaced by $3.  Otherwise, set
@@ -1536,6 +1735,39 @@ defineEscapeForEvalFunctions()
   fi
 }
 
+enableFIPS140_3()
+{
+  if [ -n "${ENABLE_FIPS140_3+set}" ] && [ "${ENABLE_FIPS140_3}" != false ]; then
+    if [ -d "${JAVA_HOME}/jre/fips140-3" ] || [ -d "${JAVA_HOME}/fips140-3" ] || [ -d "$(dirname $(dirname $(command -v java)))/jre/fips140-3" ]; then
+      JVM_ARGS="${JVM_ARGS} -Xenablefips140-3 -Dcom.ibm.jsse2.usefipsprovider=true -Dcom.ibm.jsse2.usefipsProviderName=IBMJCEPlusFIPS"
+    else
+      if [ -f "${JAVA_HOME}/conf/security/java.security" ]; then
+        if grep -q "OpenJCEPlusFIPS.FIPS140-3-Strongly-Enforced" "${JAVA_HOME}/conf/security/java.security" ; then
+          SEMERU_FIPS=true
+        elif grep -q "OpenJCEPlusFIPS.FIPS140-3-Strongly-Enforced" "$(dirname $(dirname $(command -v java)))/conf/security/java.security" ; then
+          SEMERU_FIPS=true
+        fi
+        if [ -n "${SEMERU_FIPS}" ]; then
+          saveIFS=$IFS
+          IFS=":"
+          ENABLE_FIPS140_3="${WLP_INSTALL_DIR}/lib/security/fips140_3/FIPS140-3-Liberty.properties:${ENABLE_FIPS140_3}"
+          for file in ${ENABLE_FIPS140_3}; do
+            profileFile=$file
+          done
+          IFS=$saveIFS
+          for line in $(readNativeFile "$profileFile" '[#_A-Za-z=]' | tr -d '\r'); do
+            match=$(echo "$line" | sed -n 's/.*RestrictedSecurity\.\([a-zA-Z0-9\.-]*\)\.extends$/\1/p')
+            if [ -n "$match" ]; then
+              profile=$match
+            fi
+          done
+          JVM_ARGS="${JVM_ARGS} -Dsemeru.fips=true -Dsemeru.customprofile=${profile} -Djava.security.propertiesList=\"${ENABLE_FIPS140_3}\""
+        fi
+      fi
+    fi
+  fi
+}
+
 # ########################################################################### #
 # main()                                                                      #
 # ########################################################################### #
@@ -1545,9 +1777,9 @@ SERVER_UNKNOWN_STATUS=5
 ##
 ## Determine the platform and absolute path of the installation directory.
 ##
-## IMPORTANT: Be cautious when updating WLP_INSTALL_DIR as it affects the process name of the 
-## Liberty server shown by the Linux 'ps' command. Changes introducing ".." to the path 
-## may break users' ability to find the Liberty process based on the normalized path. The pwd 
+## IMPORTANT: Be cautious when updating WLP_INSTALL_DIR as it affects the process name of the
+## Liberty server shown by the Linux 'ps' command. Changes introducing ".." to the path
+## may break users' ability to find the Liberty process based on the normalized path. The pwd
 ## command normalizes the path.
 ##
 case $OSTYPE in
@@ -1582,12 +1814,12 @@ case $OSTYPE in
 
     case $uname in
       CYGWIN_*)
-        # This is a very unlikely path. 
+        # This is a very unlikely path.
         WLP_INSTALL_DIR=$(cygpath -ma "$(findRealPath "$0" | sed 's|\\|/|g' | sed 's|/[^/]*$||')"/..)
         ;;
 
       *)
-        # The directory of this script (the server script) 
+        # The directory of this script (the server script)
         scriptDir="$(dirname "$0")"
 
         # Get absolute path.  Needed because "." (current directory) never tests positive as a symbolic link, even if it is.
@@ -1600,7 +1832,7 @@ case $OSTYPE in
         # Else the directory containing this script is a symbolic link.
         # Must find the real path in order to find the installation directory (The parent of scriptDir).
         else
-          resolvedScriptDir=$(findRealPath "${scriptDir}")             
+          resolvedScriptDir=$(findRealPath "${scriptDir}")
           WLP_INSTALL_DIR=$(unset CDPATH; cd "${resolvedScriptDir}/.." && pwd)
         fi
     esac
@@ -1723,11 +1955,11 @@ case "$ACTION" in
 
     if [ -d "${SERVER_OUTPUT_DIR}/workarea/checkpoint/image" ] && [ ${ACTION} != "checkpoint" ]; then
       # Avoid call to restoreServer below if server already running.
-      # If there is no checkpoint, then maintain legacy behavior of 
+      # If there is no checkpoint, then maintain legacy behavior of
       # allowing server launch to check for already running instance.
       if serverStatus false --status:starting; then
         exit 0
-      fi  
+      fi
     fi
 
     serverWorkingDirectory
@@ -1766,21 +1998,21 @@ case "$ACTION" in
       fi
 
       # WLP_JAR_CYGWIN is used only in support of java -jar startup of a Liberty server.
-      # When WLP_JAR_CYGWIN=true (or synonym) is specified, the PID of the launching 
+      # When WLP_JAR_CYGWIN=true (or synonym) is specified, the PID of the launching
       # process (i.e. parent of server process) is determined and stored in the PID file
-      # for use by the java -jar shutdown hook to ensure termination of the launching 
+      # for use by the java -jar shutdown hook to ensure termination of the launching
       # process. This is necessary because the launching process does not terminate on
       # its own under cygwin and if left behind holds file locks that prevent cleanup
-      # of the java -jar extraction directory. 
+      # of the java -jar extraction directory.
       if [ "$WLP_JAR_CYGWIN" = "true" -o "$WLP_JAR_CYGWIN" = "1" -o "$WLP_JAR_CYGWIN" = "TRUE" -o "$WLP_JAR_CYGWIN" = "True" ]
-      then 
+      then
 	      serverCmd '' "$@" &
 	      PID=$!
 	      mkdirs "${X_PID_DIR}"
-	      # find parent PID and store it 
+	      # find parent PID and store it
 	      SPID=`ps -ef | while read l; do grep $PID | awk -v PID=$PID '{ if ( $3 == PID ) print $2 }'; done`
 	      safeEcho "${SPID}" > "${X_PID_FILE}"
-	      wait "${PID}" # wait because this 
+	      wait "${PID}" # wait because this
 	      rc=$?
       else
 	      serverCmd '' "$@"
@@ -1791,9 +2023,9 @@ case "$ACTION" in
       exit 2
     fi
   ;;
-   
+
   # Start the server in the background
-  start)    
+  start)
 
     if serverEnvAndJVMOptions
     then
@@ -1857,7 +2089,7 @@ case "$ACTION" in
       exit $rc
     else
       exit 2
-    fi    
+    fi
   ;;
 
   create)
@@ -1865,8 +2097,8 @@ case "$ACTION" in
     createServer "$@"
     exit $rc
   ;;
-  
-  # Stop the server. 
+
+  # Stop the server.
   stop)
     serverEnv
     if checkServer true
@@ -1893,7 +2125,7 @@ case "$ACTION" in
       exit 2
     fi
   ;;
-  
+
   # Check if server is running
   status)
     serverEnv
@@ -1932,19 +2164,19 @@ case "$ACTION" in
     else
      exit $?
     fi
-    
+
     # Check to see if the server exists
     if checkServer true
     then
       serverPIDStatus
-      JVM_OPTIONS_QUOTED=${SERVER_JVM_OPTIONS_QUOTED} 
+      JVM_OPTIONS_QUOTED=${SERVER_JVM_OPTIONS_QUOTED}
       javaCmd '' "${SERVER_NAME}" --pid="${PID}" --package "$@"
       exit $?
     else
       exit 2
-    fi    
+    fi
   ;;
-  
+
 
   # dump the server's configs/logs/status to a zip file
   dump)
@@ -1952,11 +2184,11 @@ case "$ACTION" in
     # Check to see if the server exists
     if checkServer true
     then
-      javaCmd '' "${SERVER_NAME}" --dump "$@" 
+      javaCmd '' "${SERVER_NAME}" --dump "$@"
       exit $?
     else
       exit 2
-    fi    
+    fi
   ;;
 
   # dump JVM status
@@ -1970,18 +2202,18 @@ case "$ACTION" in
       exit 2
     fi
   ;;
-  
+
   # pause the server
   pause)
     serverEnv
     # Check to see if the server exists
     if checkServer true
     then
-      javaCmd '' "${SERVER_NAME}" --pause "$@" 
+      javaCmd '' "${SERVER_NAME}" --pause "$@"
       exit $?
     else
       exit 2
-    fi    
+    fi
   ;;
 
   # resume the server
@@ -1990,33 +2222,33 @@ case "$ACTION" in
     # Check to see if the server exists
     if checkServer true
     then
-      javaCmd '' "${SERVER_NAME}" --resume "$@" 
+      javaCmd '' "${SERVER_NAME}" --resume "$@"
       exit $?
     else
       exit 2
-    fi    
+    fi
   ;;
 
   version)
     serverEnv
     javaCmd '' --version
-  ;;  
-  
+  ;;
+
   list)
     installEnv
     javaCmd '' --list
-  ;;  
-  
+  ;;
+
   help)
     installEnv
     javaCmd '' --help ${SERVER_NAME}
-  ;;  
+  ;;
 
   help:usage)
     installEnv
     javaCmd '' --help:usage
   ;;
-  
+
   *)
     installEnv
     javaCmd '' --help:actions:${ACTION}

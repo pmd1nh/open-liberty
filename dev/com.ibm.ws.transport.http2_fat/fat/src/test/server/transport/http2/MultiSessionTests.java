@@ -1,14 +1,11 @@
 /*******************************************************************************
- * Copyright (c) 2018, 2021 IBM Corporation and others.
+ * Copyright (c) 2018, 2024 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-2.0/
- * 
- * SPDX-License-Identifier: EPL-2.0
  *
- * Contributors:
- *     IBM Corporation - initial API and implementation
+ * SPDX-License-Identifier: EPL-2.0
  *******************************************************************************/
 package test.server.transport.http2;
 
@@ -50,10 +47,8 @@ public class MultiSessionTests extends FATServletClient {
 
     private final static LibertyServer runtimeServer = LibertyServerFactory.getLibertyServer("http2ClientRuntime");
     private final static LibertyServer server = LibertyServerFactory.getLibertyServer("com.ibm.ws.transport.http2.fat");
-    String defaultServletPath = "H2FATDriver/H2FATDriverServlet?hostName=";
-
     @Rule
-    public final TestName testName = new TestName();
+    public final TestName testName = new Utils.CustomTestName();
 
     @BeforeClass
     public static void before() throws Exception {
@@ -68,6 +63,7 @@ public class MultiSessionTests extends FATServletClient {
 
         server.startServer(true, true);
         runtimeServer.startServer(true);
+        H2FATApplicationHelper.preTestNettyCheck(runtimeServer, server);
     }
 
     @AfterClass
@@ -88,7 +84,7 @@ public class MultiSessionTests extends FATServletClient {
         }
 
         FATServletClient.runTest(runtimeServer,
-                                 "H2FATDriver/H2FATDriverServlet?hostName=" + server.getHostname() +
+                                 Http2FullModeTests.defaultServletPath + server.getHostname() +
                                                 "&port=" + server.getHttpSecondaryPort() +
                                                 "&testdir=" + Utils.TEST_DIR,
                                  testName);

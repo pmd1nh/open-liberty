@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020, 2024 IBM Corporation and others.
+ * Copyright (c) 2020, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -25,6 +25,7 @@ import com.ibm.ws.jaxrs21.client.fat.test.JAXRS21ClientLTPATest;
 //import com.ibm.ws.jaxrs21.client.fat.test.JAXRS21ClientRestEasyRxInvokerTest;
 import com.ibm.ws.jaxrs21.client.fat.test.JAXRS21ClientSSLProxyAuthTest;
 import com.ibm.ws.jaxrs21.client.fat.test.JAXRS21ClientSSLTest;
+import com.ibm.ws.jaxrs21.client.fat.test.JAXRS21ClientThreadLeakTest;
 import com.ibm.ws.jaxrs21.client.fat.test.JAXRS21ComplexClientTest;
 import com.ibm.ws.jaxrs21.client.fat.test.JAXRS21ExecutorsTest;
 import com.ibm.ws.jaxrs21.client.fat.test.JAXRS21ReactiveSampleTest;
@@ -45,6 +46,7 @@ import componenttest.rules.repeater.RepeatTests;
                 JAXRS21ClientLTPATest.class,
                 JAXRS21ClientSSLProxyAuthTest.class,
                 JAXRS21ClientSSLTest.class,
+                JAXRS21ClientThreadLeakTest.class,
                 JAXRS21ComplexClientTest.class,
                 JAXRS21ExecutorsTest.class,
                 JAXRS21ReactiveSampleTest.class,

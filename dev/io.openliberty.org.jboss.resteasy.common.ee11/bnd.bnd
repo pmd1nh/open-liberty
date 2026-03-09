@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (c) 2022, 2025 IBM Corporation and others.
+# Copyright (c) 2022,2026 IBM Corporation and others.
 # All rights reserved. This program and the accompanying materials
 # are made available under the terms of the Eclipse Public License 2.0
 # which accompanies this distribution, and is available at
@@ -19,7 +19,7 @@ Require-Capability: osgi.ee; filter:="(&(osgi.ee=JavaSE)(version=17))"
 
 bVersion=1.0
 
-resteasy-version=7.0.0.Alpha2
+resteasy-version=7.0.0.Final
 resteasy-tracing-api-version=1.1.0.Final
 apache-mime4j-version=0.8.10
 
@@ -39,8 +39,8 @@ app-resources= \
 -cdiannotations:
 
 -dsannotations: \
+  io.openliberty.restfulWS.client.internal.ServiceActivator,\
   io.openliberty.org.jboss.resteasy.common.client.JAXRSClientConfig,\
-  io.openliberty.org.jboss.resteasy.common.client.JAXRSAppSecurity,\
   io.openliberty.restfulWS.client.security.OAuthPropagationHelper,\
   io.openliberty.restfulWS.introspector.ResteasyEndpointIntrospector,\
   io.openliberty.restfulWS.client.internal.ClientAsyncTaskWrapperComponent
@@ -183,16 +183,16 @@ instrument.classesExcludes: \
   org/jboss/resteasy/util/ThreadLocalStack.class
 
 Include-Resource:\
-  @${repo;org.jboss.resteasy:resteasy-client;${resteasy-version};EXACT}, \
-  @${repo;org.jboss.resteasy:resteasy-client-api;${resteasy-version};EXACT}, \
-  @${repo;org.jboss.resteasy:resteasy-core;${resteasy-version};EXACT}, \
-  @${repo;org.jboss.resteasy:resteasy-core-spi;${resteasy-version};EXACT}, \
-  @${repo;org.jboss.resteasy:resteasy-multipart-provider;${resteasy-version};EXACT}, \
-  @${repo;org.jboss.resteasy:resteasy-tracing-api;${resteasy-tracing-api-version};EXACT}, \
-  @${repo;org.apache.james:apache-mime4j-core;${apache-mime4j-version};EXACT}, \
-  @${repo;org.apache.james:apache-mime4j-dom;${apache-mime4j-version};EXACT}, \
-  @${repo;org.apache.james:apache-mime4j-storage;${apache-mime4j-version};EXACT}, \
-  @${repo;com.ibm.async:asyncutil;0.1.0;EXACT}, \
+  @\${repo;org.jboss.resteasy:resteasy-client;${resteasy-version};EXACT}, \
+  @\${repo;org.jboss.resteasy:resteasy-client-api;${resteasy-version};EXACT}, \
+  @\${repo;org.jboss.resteasy:resteasy-core;${resteasy-version};EXACT}, \
+  @\${repo;org.jboss.resteasy:resteasy-core-spi;${resteasy-version};EXACT}, \
+  @\${repo;org.jboss.resteasy:resteasy-multipart-provider;${resteasy-version};EXACT}, \
+  @\${repo;org.jboss.resteasy:resteasy-tracing-api;${resteasy-tracing-api-version};EXACT}, \
+  @\${repo;org.apache.james:apache-mime4j-core;${apache-mime4j-version};EXACT}, \
+  @\${repo;org.apache.james:apache-mime4j-dom;${apache-mime4j-version};EXACT}, \
+  @\${repo;org.apache.james:apache-mime4j-storage;${apache-mime4j-version};EXACT}, \
+  @\${repo;com.ibm.async:asyncutil;0.1.0;EXACT}, \
   io/openliberty=${bin}/io/openliberty, \
   org/jboss/resteasy=${bin}/org/jboss/resteasy, \
   META-INF=resources/META-INF
@@ -224,14 +224,14 @@ Include-Resource:\
 	com.ibm.ws.container.service.compat;version=latest,\
 	com.ibm.ws.logging.core,\
 	com.ibm.ws.threading,\
-	io.openliberty.org.jboss.logging35,\
+	io.openliberty.org.jboss.logging36,\
 	com.ibm.ws.org.osgi.annotation.versioning;version=latest,\
 	com.ibm.wsspi.org.osgi.service.component.annotations;version=latest,\
 	com.ibm.websphere.org.osgi.core;version=latest,\
 	com.ibm.ws.kernel.service,\
 	io.openliberty.webcontainer.security.internal,\
 	com.ibm.websphere.security,\
-	com.ibm.ws.org.jboss.jandex,\
+        io.openliberty.io.smallrye.jandex3;version=latest,\
 	org.eclipse.osgi
 
 -testpath: \

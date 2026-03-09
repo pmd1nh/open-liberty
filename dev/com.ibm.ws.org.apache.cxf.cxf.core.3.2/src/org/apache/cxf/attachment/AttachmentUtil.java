@@ -55,14 +55,17 @@ import javax.activation.FileDataSource;
 import javax.activation.MailcapCommandMap;
 import javax.activation.URLDataSource;
 
+import org.apache.cxf.common.util.PropertyUtils;
 import org.apache.cxf.common.util.StringUtils;
 import org.apache.cxf.common.util.SystemPropertyAction; // Liberty Change
+import org.apache.cxf.endpoint.Endpoint;
 import org.apache.cxf.helpers.HttpHeaderHelper;
 import org.apache.cxf.interceptor.Fault;
 import org.apache.cxf.io.CachedOutputStream;
 import org.apache.cxf.message.Attachment;
 import org.apache.cxf.message.Message;
 import org.apache.cxf.message.MessageUtils;
+import org.apache.cxf.service.model.EndpointInfo;
 import org.apache.cxf.common.logging.LogUtils;  // Liberty Change
 
 // Liberty Change - Backport https://github.com/apache/cxf/pull/960
@@ -83,7 +86,18 @@ public final class AttachmentUtil {
     private static final CommandMap DEFAULT_COMMAND_MAP = CommandMap.getDefaultCommandMap();
     private static final MailcapCommandMap COMMAND_MAP = new EnhancedMailcapCommandMap();
     private static final Logger LOG = LogUtils.getL7dLogger(AttachmentUtil.class);  // Liberty Change
+    
+    // Liberty change begin
+    public static final String IBM_MTOM_ENABLED = "ibm-mtom-enabled";
+    // Liberty change end
+    
+    private static final String HOLD_TEMP_FILES = "ibm-hold-temp-files";  // Liberty Change
 
+    private enum attachmentAction {
+        HOLD,
+        RELEASE
+    }
+    
     static final class EnhancedMailcapCommandMap extends MailcapCommandMap {
         @Override
         public synchronized DataContentHandler createDataContentHandler(
@@ -205,10 +219,10 @@ public final class AttachmentUtil {
 
     public static void setStreamedAttachmentProperties(Message message, CachedOutputStream bos)
         throws IOException {
-        Object directory = message.getContextualProperty(AttachmentDeserializer.ATTACHMENT_DIRECTORY);
-	if (LOG.isLoggable(Level.FINEST)) {  //Liberty Change Start
-	   LOG.finest("setStreamedAttachmentProperties: Attachment directory: " + directory);
-	} //Liberty Change End
+        // Liberty change begin
+        Object directory = getAttachmentProperty(message, AttachmentDeserializer.ATTACHMENT_DIRECTORY);
+        
+        //Liberty Change End
         if (directory != null) {
             if (directory instanceof File) {
                 bos.setOutputDir((File)directory);
@@ -217,10 +231,9 @@ public final class AttachmentUtil {
             }
         }
 
-        Object threshold = message.getContextualProperty(AttachmentDeserializer.ATTACHMENT_MEMORY_THRESHOLD);
-	if (LOG.isLoggable(Level.FINE)) {  //Liberty Change Start
-	   LOG.fine("setStreamedAttachmentProperties: Attachment memory threshold: " + threshold);
-	} //Liberty Change End
+        // Liberty change begin
+        Object threshold = getAttachmentProperty(message, AttachmentDeserializer.ATTACHMENT_MEMORY_THRESHOLD);
+        //Liberty Change End
         if (threshold != null) {
             if (threshold instanceof Long) {
                 bos.setThreshold((Long)threshold);
@@ -231,10 +244,10 @@ public final class AttachmentUtil {
             bos.setThreshold(AttachmentDeserializer.THRESHOLD);
         }
 
-        Object maxSize = message.getContextualProperty(AttachmentDeserializer.ATTACHMENT_MAX_SIZE);
-	if (LOG.isLoggable(Level.FINEST)) { //Liberty Change Start
-	   LOG.finest("setStreamedAttachmentProperties: Attachment maxSize: " + maxSize);
-	} //Liberty Change End
+        // Liberty change begin
+        Object maxSize = getAttachmentProperty(message, AttachmentDeserializer.ATTACHMENT_MAX_SIZE);
+
+        //Liberty Change End
         if (maxSize != null) {
             if (maxSize instanceof Long) {
                 bos.setMaxSize((Long) maxSize);
@@ -685,4 +698,94 @@ public final class AttachmentUtil {
         return new LazyDataSource(contentId, atts);
     }
 
+    // Liberty change begin
+    public static boolean mtomOverride(org.apache.cxf.message.Message message, boolean defaultValue)     {
+        boolean mtomEnabled = defaultValue;
+        Object  mtomEnabledBySystemProperty = getPropertyFromEndPointInfo(message, IBM_MTOM_ENABLED);
+        if(!MessageUtils.isRequestor(message) && (mtomEnabledBySystemProperty != null))   {
+                // override mtomEnabled for outbound response if property is set
+                mtomEnabled = PropertyUtils.isTrue(mtomEnabledBySystemProperty); 
+        }
+        return mtomEnabled;   
+    }
+
+    /*
+     * @return  If <propertyName> end point info property value is set returns that value,
+     *          If no value set returns null
+     */
+    public static Object getPropertyFromEndPointInfo(org.apache.cxf.message.Message message, String propertyName)     {
+        Object propertyValue = null;
+        Endpoint endpoint = message.getExchange().getEndpoint();
+        if(endpoint != null)    {
+            EndpointInfo endpointInfo = endpoint.getEndpointInfo();
+            if(endpointInfo!= null)    {
+                propertyValue = endpointInfo.getProperty(propertyName);        
+            }
+        }
+        return propertyValue;
+    }
+    
+    public static void holdTempFiles(Message message) throws IOException {
+        attachmentOperation(message, attachmentAction.HOLD);
+    }
+
+    public static void releaseTempFileHold(Message message) throws IOException {
+        attachmentOperation(message, attachmentAction.RELEASE);
+    }
+    
+    /*
+     * Operate on each attachment separately to hold and release
+     */
+    private static void attachmentOperation(Message message, attachmentAction action) throws IOException        {
+        Collection<Attachment> attachments = message.getAttachments();
+        if (attachments != null) {
+            for (Attachment attachment : attachments) {
+                if (attachment instanceof AttachmentImpl) {
+                    DataHandler dataHandler = attachment.getDataHandler();
+                    if (dataHandler != null) {
+                        DataSource dataSource = dataHandler.getDataSource();
+                        if (dataSource instanceof AttachmentDataSource) {
+                            if (action == attachmentAction.HOLD) {
+                                ((AttachmentDataSource) dataSource).hold(message);
+                                if (LOG.isLoggable(Level.FINEST)) {
+                                    LOG.finest("attachmentOperation : Temporary file and stream are set to hold from removal.");
+                                 }
+                            } else if (action == attachmentAction.RELEASE) {
+                                ((AttachmentDataSource) dataSource).release();
+                                if (LOG.isLoggable(Level.FINEST)) {
+                                    LOG.finest("attachmentOperation : Temporary file and stream holds are released. They will be removed.");
+                                 }
+                            } else {
+                                if (LOG.isLoggable(Level.FINEST)) {
+                                    LOG.finest("attachmentOperation : No attachmentAction to perform!");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            if (LOG.isLoggable(Level.FINEST)) {
+                LOG.finest("attachmentHolds : Couldn't find any attachments!");
+            }
+        }
+    }
+    
+    public static boolean isHoldTempFilesPropertyTrue(org.apache.cxf.message.Message message) {
+        Object propertyFromEndPointInfo = getPropertyFromEndPointInfo(message, HOLD_TEMP_FILES);
+        return PropertyUtils.isTrue(propertyFromEndPointInfo);
+    }
+    
+    private static Object getAttachmentProperty(Message message, String propertyName)     {
+        Object propertyValue = message.getContextualProperty(propertyName);
+        // Liberty change begin
+        if (propertyValue == null) {
+            propertyValue = getPropertyFromEndPointInfo(message, propertyName);
+        }
+        if (LOG.isLoggable(Level.FINEST)) {
+            LOG.finest("setStreamedAttachmentProperties: " + propertyName + ": " + propertyValue);
+        }
+        return propertyValue;
+    }
+    // Liberty change end
 }

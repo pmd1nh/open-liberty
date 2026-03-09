@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1997, 2021 IBM Corporation and others.
+ * Copyright (c) 1997, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -130,6 +130,20 @@ public final class ConnectionManager implements com.ibm.ws.j2c.ConnectionManager
      */
     private final boolean rrsTransactional;
 
+    private static String osName = System.getProperty("os.name");
+    private static boolean isZOS = false;
+    private static boolean osVersionChecked = false;
+
+    private static boolean isZOS() {
+        if (osVersionChecked) {
+            return isZOS;
+        } else {
+            isZOS = (osName.equalsIgnoreCase("z/OS") || osName.equalsIgnoreCase("OS/390"));
+            osVersionChecked = true;
+            return isZOS;
+        }
+    }
+
     /**
      * @param cfSvc     connection factory service
      * @param mcfXProps MCFExtendedProperties
@@ -172,11 +186,18 @@ public final class ConnectionManager implements com.ibm.ws.j2c.ConnectionManager
         // Indicates if the configured MCF allows "current thread identity" to be used for getConnection() processing.
         int threadIdentitySupport = zosInfo[0];
 
+        int serviceType = zosInfo[3];
+
         // If thread identity is enabled, a ThreadIdentitySecurityHelper; otherwise a DefaultSecurityHelper.
-        if (ThreadIdentityManager.isThreadIdentityEnabled() && threadIdentitySupport != AbstractConnectionFactoryService.THREAD_IDENTITY_NOT_ALLOWED)
-            securityHelper = new ThreadIdentitySecurityHelper(threadIdentitySupport, threadSecurity);
-        else
+        if (ThreadIdentityManager.isThreadIdentityEnabled() && threadIdentitySupport != AbstractConnectionFactoryService.THREAD_IDENTITY_NOT_ALLOWED) {
+            if (isZOS()) {
+                securityHelper = new ThreadIdentitySecurityHelper(threadIdentitySupport, threadSecurity, serviceType);
+            } else {
+                securityHelper = new DefaultSecurityHelper();
+            }
+        } else {
             securityHelper = new DefaultSecurityHelper();
+        }
 
         if (isTraceOn && tc.isDebugEnabled()) {
             Tr.debug(this, tc, " globalConfigProps " + gConfigProps);
@@ -334,6 +355,13 @@ public final class ConnectionManager implements com.ibm.ws.j2c.ConnectionManager
                 mcWrapper.setPoolState(poolState);
                 com.ibm.ws.ffdc.FFDCFilter.processException(e, "com.ibm.ejs.j2c.ConnectionManager.allocateConnection", "344", this);
                 Tr.error(tc, "FAILED_CONNECTION_J2CA0021", new Object[] { e, _pm.gConfigProps.cfName });
+                // Decrement the handle count that was incremented during getConnection
+                if (mcWrapper.getHandleCount() > 0) {
+                    if (isTraceOn && tc.isDebugEnabled()) {
+                        Tr.debug(this, tc, "getConnection failed, decrementing handle count from " + mcWrapper.getHandleCount());
+                    }
+                    mcWrapper.decrementHandleCount();
+                }
 
                 /*
                  * If the Resource Adapter throws a ResourceException and we are not in a

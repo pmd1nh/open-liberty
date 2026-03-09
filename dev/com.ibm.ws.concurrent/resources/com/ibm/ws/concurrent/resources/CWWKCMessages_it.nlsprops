@@ -1,5 +1,5 @@
 ###############################################################################
-# Copyright (c) 2012, 2020 IBM Corporation and others.
+# Copyright (c) 2012, 2026 IBM Corporation and others.
 # All rights reserved. This program and the accompanying materials
 # are made available under the terms of the Eclipse Public License 2.0
 # which accompanies this distribution, and is available at
@@ -62,6 +62,10 @@ CWWKC1103.skip.run.failed=CWWKC1103E: L''esecuzione dell''attivit\u00e0 {0}, che
 CWWKC1103.skip.run.failed.explanation=L'operazione skipRun per il Trigger non \u00e8 riuscita, pertanto viene ignorato questo tentativo di esecuzione dell'attivit\u00e0.
 CWWKC1103.skip.run.failed.useraction=Correggere la causa dell'errore e decidere se ripetere o meno l'attivit\u00e0.
 
+CWWKC1108.override.virtual=CWWKC1108I: La fabbrica di thread gestita da {0} creer\u00e0 thread della piattaforma perch\u00e9 la creazione di thread virtuali da parte del server Liberty \u00e8 disabilitata.
+CWWKC1108.override.virtual.explanation=L'SPI ThreadTypeOverride ha disabilitato la creazione di thread virtuali da parte del server Liberty.
+CWWKC1108.override.virtual.useraction=Non \u00e8 necessaria alcuna azione.
+
 CWWKC1110.task.canceled=CWWKC1110I: Il task {0}, che era stato inviato al servizio esecutore {1}, viene annullato.
 CWWKC1110.task.canceled.explanation=Il compito \u00e8 stato annullato.
 CWWKC1110.task.canceled.useraction=Non \u00e8 richiesta alcuna azione.
@@ -78,11 +82,11 @@ CWWKC1120.future.get.rejected=CWWKC1120E: La classe Future fornita ai metodi tas
 CWWKC1120.future.get.rejected.explanation=I metodi taskSubmitted e taskStarting di ManagedTaskListener vengono eseguiti sul thread che inoltrer\u00e0 o avvier\u00e0 l'attivit\u00e0. Pertanto, la classe Future fornita a questi metodi non deve essere utilizzata per attendere l'attivit\u00e0.
 CWWKC1120.future.get.rejected.useraction=Aggiornare l'applicazione per evitare di richiamare get sulla classe Future fornita a taskSubmitted e taskStarting.
 
-CWWKC1121.virtual.invalid=CWWKC1121E: L''annotazione {0} o l''elemento del descrittore di distribuzione {1} che ha il nome {0} specifica virtual=true, ma i thread virtuali non sono disponibili prima di Java 21. Il livello Java utilizzato \u00e8: {1}.
+CWWKC1121.virtual.invalid=CWWKC1121E: L''annotazione ` {0} ` o l''elemento descrittore di distribuzione ` {1} ` con il nome ` {2} ` specifica `virtual=true`, ma i thread virtuali non sono disponibili prima di Java 21. Il livello Java utilizzato \u00e8: {3}.
 CWWKC1121.virtual.invalid.explanation=I thread virtuali non sono disponibili nella versione di Java utilizzata.
 CWWKC1121.virtual.invalid.useraction=Aggiornare a una versione pi\u00f9 recente di Java che supporti i thread virtuali.
 
-CWWKC1122.mod.unavail=CWWKC1122E: L''applicazione {0} o il suo modulo {1} non sono disponibili.
+CWWKC1122.mod.unavail=CWWKC1122E: L''applicazione {0} o il suo modulo {1} non sono disponibili. ManagedThreadFactory i bean definiti nell''applicazione o nel modulo non possono essere ottenuti.
 CWWKC1122.mod.unavail.explanation=L'applicazione e il modulo che definiscono la configurazione di ManagedThreadFactory devono essere disponibili per ottenere un'istanza di ManagedThreadFactory.
 CWWKC1122.mod.unavail.useraction=Assicurarsi che l'applicazione sia avviata e che includa il modulo che definisce la configurazione della ManagedThreadFactory.
 

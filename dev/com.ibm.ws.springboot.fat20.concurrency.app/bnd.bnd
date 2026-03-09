@@ -20,8 +20,7 @@ instrument.disabled: true
 publish.wlp.jar.disabled: true
 
 src: \
-  src/main/java, \
-  src/main/resources
+  src/main/java
 
 # Specify bundles to be added to the classpath of a VM used in testing. 
 # Entries in the -testpath instruction enable the Eclipse Package Explorer 
@@ -40,4 +39,5 @@ src: \
   org.springframework:spring-jdbc;${springVersion20}, \
   org.springframework:spring-tx;${springVersion20}, \
   org.springframework:spring-web;${springVersion20}, \
-  org.slf4j:slf4j-api;version=1.7.36
+  org.slf4j:slf4j-api;version=1.7.36, \
+  com.ibm.websphere.javaee.servlet.3.1

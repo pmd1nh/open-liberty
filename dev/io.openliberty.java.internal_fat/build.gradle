@@ -1,10 +1,10 @@
 /*******************************************************************************
- * Copyright (c) 2017,2025 IBM Corporation and others.
+ * Copyright (c) 2017,2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-2.0/
- * 
+ *
  * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
@@ -20,6 +20,11 @@ configurations {
     app22
     app23
     app24
+    app25
+    app26
+    requiredLibs {
+        transitive = false
+    }
  }
  
  dependencies {
@@ -31,13 +36,10 @@ configurations {
     app22 'io.openliberty:java-apps:22.1.0'
     app23 'io.openliberty:java-apps:23.1.0'
     app24 'io.openliberty:java-apps:24.1.0'
+    app25 'io.openliberty:java-apps:25.1.0'
+    app26 'io.openliberty:java-apps:26.0.0'
+    requiredLibs project(':com.ibm.ws.kernel.service')
  }
-
-task copyKernelService(type: Copy) {
-  dependsOn ':com.ibm.ws.kernel.service:assemble'
-  from project(':com.ibm.ws.kernel.service').buildDir
-  into new File(autoFvtDir, 'lib')
-}
 
 task copyApp17A(type: Copy) {
   from configurations.app17
@@ -99,7 +101,18 @@ task copyApp24(type: Copy) {
   rename 'java-apps-*.*.*.*', 'io.openliberty.java.internal_fat_24.war'
 }
 
-addRequiredLibraries.dependsOn copyKernelService
+task copyApp25(type: Copy) {
+  from configurations.app25
+  into new File(autoFvtDir, 'publish/servers/java25-server/apps/')
+  rename 'java-apps-*.*.*.*', 'io.openliberty.java.internal_fat_25.war'
+}
+
+task copyApp26(type: Copy) {
+  from configurations.app26
+  into new File(autoFvtDir, 'publish/servers/java26-server/apps/')
+  rename 'java-apps-*.*.*.*', 'io.openliberty.java.internal_fat_26.war'
+}
+
 addRequiredLibraries.dependsOn copyApp17A
 addRequiredLibraries.dependsOn copyApp17B
 addRequiredLibraries.dependsOn copyApp18A
@@ -110,3 +123,5 @@ addRequiredLibraries.dependsOn copyApp21
 addRequiredLibraries.dependsOn copyApp22
 addRequiredLibraries.dependsOn copyApp23
 addRequiredLibraries.dependsOn copyApp24
+addRequiredLibraries.dependsOn copyApp25
+addRequiredLibraries.dependsOn copyApp26
